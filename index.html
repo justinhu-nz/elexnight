@@ -136,6 +136,11 @@ main > .wide { grid-column: 1 / -1; }
   width: 100%; border: 0; background: none; text-align: left; padding: 4px 2px; border-bottom: 1px solid var(--grid); cursor: pointer;
 }
 .mrow:hover, .mrow:focus-visible { background: var(--surface-2); outline: none; }
+/* Phones: drop the % column so seat names stay readable. */
+@media (max-width: 480px) {
+  .mrow { grid-template-columns: 34px minmax(0, 1fr) 52px 56px 32px; gap: 6px; }
+  .mrow > :nth-child(5) { display: none; }
+}
 .mrow.labels { cursor: default; font-size: 11px; color: var(--text-3); padding-top: 2px; padding-bottom: 2px; }
 .mrow.labels:hover { background: none; }
 .mrow .mname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
@@ -227,12 +232,7 @@ td .mini span { display: block; height: 100%; background: var(--text-3); }
   <section class="card" aria-labelledby="ws-title">
     <div class="card-head">
       <h2 id="ws-title">Is National winning?</h2>
-      <span class="sub" id="ws-sub"></span>
-      <div class="filters" role="group" aria-label="Filter seats to watch">
-        <button type="button" data-filter="all" aria-pressed="true">All</button>
-        <button type="button" data-filter="behind" aria-pressed="false">National behind</button>
-        <button type="button" data-filter="close" aria-pressed="false">Close (&lt;500)</button>
-      </div>
+      <span class="sub">Watch seats from National's side</span>
     </div>
     <div id="watch"></div>
   </section>
@@ -344,7 +344,6 @@ const state = {
   lastError: null,
   relay: null,        // which relay answered last
   tick: 0,
-  filter: "all",
   othersOpen: false,
   selected: null,
 };
@@ -653,182 +652,140 @@ function renderParliamentLine(el) {
 }
 
 // ====================================================================
-// 5. Seats to watch
+// 5. Is National winning?
 // ====================================================================
 
-// Verdict wording from National's side.
-const VERDICT = {
-  defend: { ahead: "Holding", behind: "Losing" },
-  attack: { ahead: "Gaining", behind: "Short" },
-};
+const MARGIN_SCALE = 15; // margin (% of candidate votes) at the end of a bar
+
+// Electorates National leads across all 71, with a range for close seats,
+// and what its party vote earns.
+function natStats() {
+  const natP = [...state.ref.parties.values()].find((p) => p.abbrev === "NAT")?.p;
+  const started = [...state.ref.electorates.keys()].map(race).filter((r) => r.started);
+  const wins = new Map();
+  let natWins = 0, closeLead = 0, closeTrail = 0;
+  for (const r of started) {
+    wins.set(r.lead.p, (wins.get(r.lead.p) ?? 0) + 1);
+    const nv = natView(r);
+    if (!nv) continue;
+    if (nv.ahead) { natWins++; if (nv.diff < CLOSE_MARGIN) closeLead++; }
+    else if (-nv.diff < CLOSE_MARGIN && r.second === nv.nat) closeTrail++;
+  }
+  const el = state.election;
+  const natRow = el?.parties.find((r) => r.p === natP);
+  const counted = natRow && el.parties.some((r) => r.votes > 0);
+  const earned = counted ? allocateSeats(new Map(el.parties.map((r) => [r.p, r.votes])), wins).get(natP) ?? 0 : null;
+  return { started: started.length, natWins, lo: natWins - closeLead, hi: natWins + closeTrail, pct: natRow?.pct, earned };
+}
 
 function renderWatch() {
-  const board = renderNatBoard();
-  let closeCount = 0;
-  const groups = WATCH_GROUPS.map((g) => {
-    const cards = g.seats.map(([e]) => {
-      const rc = race(e);
-      const f = flags(rc);
-      const nv = g.side === "other" ? null : natView(rc);
-      if (f.close) closeCount++;
-      if (state.filter === "close" && !f.close) return "";
-      if (state.filter === "behind" && !(nv && !nv.ahead)) return "";
-      return g.side === "other" ? seatCard(rc, f) : natCard(rc, f, nv, g.side);
-    }).join("");
-    if (!cards) return "";
-    const grid = `<div class="seats-grid">${cards}</div>`;
-    if (g.side === "other") {
-      // Collapsed by default: these races don't decide whether National is winning.
-      return `<details class="others"${state.othersOpen || state.filter !== "all" ? " open" : ""}>
-        <summary class="group-title">${esc(g.title)} (${g.seats.length})</summary>${grid}</details>`;
-    }
-    return `<div class="group-title">${esc(g.title)} · ${groupTally(g)}</div>${grid}`;
-  }).join("");
-  document.getElementById("watch").innerHTML = board + (groups || `<div class="empty">No seats match this filter yet.</div>`);
-  document.getElementById("ws-sub").textContent = `${closeCount} watch seats within ${CLOSE_MARGIN} votes`;
-}
+  const s = natStats();
+  const ready = s.started > 0 && s.earned !== null;
+  const over = (w) => Math.max(0, w - s.earned);
+  const range = (a, b, f = String) => (a === b ? "" : `${f(a)} to ${f(b)}`);
 
-function groupTally(g) {
-  let ahead = 0, started = 0;
-  for (const [e] of g.seats) { const nv = natView(race(e)); if (nv) { started++; if (nv.ahead) ahead++; } }
-  const word = g.side === "defend" ? "holding" : "gaining";
-  return started ? `${word} ${ahead} of ${g.seats.length}` : `${g.seats.length} seats`;
-}
-
-// The headline: how many electorates National leads, what its party vote
-// earns, and whether that leaves it with an overhang.
-function renderNatBoard() {
-  const all = [...state.ref.electorates.keys()].map(race);
-  const started = all.filter((r) => r.started);
-  const natP = [...state.ref.parties.values()].find((p) => p.abbrev === "NAT")?.p;
-  const winsByParty = new Map();
-  for (const r of started) winsByParty.set(r.lead.p, (winsByParty.get(r.lead.p) ?? 0) + 1);
-  const natWins = winsByParty.get(natP) ?? 0;
-
-  const el = state.election;
-  const partyVotes = new Map((el?.parties ?? []).map((r) => [r.p, r.votes]));
-  const natRow = el?.parties.find((r) => r.p === natP);
-  const anyVotes = natRow && [...partyVotes.values()].some((v) => v > 0);
-  const earned = anyVotes ? allocateSeats(partyVotes, winsByParty).get(natP) ?? 0 : null;
-
-  let verdict = "–", verdictNote = "Waiting for first results";
-  if (anyVotes && started.length) {
-    const overhang = natWins - earned;
-    if (overhang > 0) { verdict = `+${overhang} overhang`; verdictNote = "More electorates than its party vote earns, so no list MPs"; }
-    else { verdict = `${-overhang} list MPs`; verdictNote = "Party vote earns more than its electorates"; }
-  }
-
-  const dots = (side) => WATCH_GROUPS.find((g) => g.side === side).seats.map(([e]) => {
-    const rc = race(e);
-    const nv = natView(rc);
-    const cls = !nv ? "" : nv.ahead ? party(nv.nat.p).cls : party(nv.rival.p).cls;
-    const status = !nv ? "waiting" : nv.ahead ? `National ahead by ${fmt(nv.diff)}` : `National behind by ${fmt(-nv.diff)}`;
-    return `<button type="button" class="nb-dot ${cls}" data-e="${e}" data-tip="${esc(`${rc.name}: ${status}`)}" aria-label="${esc(`${rc.name}, ${status}`)}"></button>`;
-  }).join("");
-  const tally = (side) => {
-    const g = WATCH_GROUPS.find((x) => x.side === side);
-    let ahead = 0, behind = 0;
-    for (const [e] of g.seats) { const nv = natView(race(e)); if (nv) nv.ahead ? ahead++ : behind++; }
-    const [a, b] = side === "defend" ? ["holding", "losing"] : ["gaining", "short"];
-    return `<b>${ahead}</b> ${a} · <b>${behind}</b> ${b}`;
-  };
-
-  return `<div class="natboard">
-    <div class="nb">
-      <div class="k">Electorates National leads</div>
-      <div class="v">${started.length ? natWins : "–"} <small>of ${state.ref.electorates.size}</small></div>
-      <div class="s">${started.length} of ${state.ref.electorates.size} electorates reporting</div>
+  const overhang = ready ? over(s.natWins) : null;
+  const board = `<div class="board">
+    <div class="stat2" data-tip="Electorates where National's candidate is ahead, of all 71. The range assumes every seat within ${CLOSE_MARGIN} votes could go either way.">
+      <div class="k">Electorates led</div>
+      <div class="v">${ready ? s.natWins : "–"}<small> / ${state.ref.electorates.size}</small></div>
+      <div class="r">${ready ? (range(s.lo, s.hi) ? `close-seat range ${range(s.lo, s.hi)}` : "no close seats") : `${s.started} reporting`}</div>
     </div>
-    <div class="nb">
-      <div class="k">Seats its party vote earns (est.)</div>
-      <div class="v">${earned ?? "–"}${natRow && anyVotes ? ` <small>${pct(natRow.pct)}</small>` : ""}</div>
-      <div class="s">Our Sainte-Laguë estimate from counted votes</div>
+    <div class="stat2" data-tip="National's share of party votes counted so far, and the seats that share earns (our Sainte-Laguë estimate).">
+      <div class="k">Party vote</div>
+      <div class="v">${ready ? pct(s.pct) : "–"}</div>
+      <div class="r">${ready ? `earns ≈${s.earned} seats` : "awaiting results"}</div>
     </div>
-    <div class="nb">
-      <div class="k">Overhang or list MPs</div>
-      <div class="v">${verdict}</div>
-      <div class="s">${verdictNote}</div>
+    <div class="stat2" data-tip="Electorates led beyond what the party vote earns. Overhang means National gets no list MPs and Parliament grows.">
+      <div class="k">Overhang</div>
+      <div class="v">${ready ? (overhang ? `+${overhang}` : "None") : "–"}</div>
+      <div class="r">${!ready ? "awaiting results" : overhang ? (range(over(s.lo), over(s.hi)) ? `range ${range(over(s.lo), over(s.hi), (x) => (x ? "+" + x : "0"))}` : "no list MPs") : `≈${s.earned - s.natWins} list MPs`}</div>
     </div>
-    <div class="nb">
-      <div class="k">Defending ${WATCH_GROUPS.find((g) => g.side === "defend").seats.length} watch seats</div>
-      <div class="s">${tally("defend")}</div>
-      <div class="nb-dots">${dots("defend")}</div>
-    </div>
-    <div class="nb">
-      <div class="k">Chasing ${WATCH_GROUPS.find((g) => g.side === "attack").seats.length} watch seats</div>
-      <div class="s">${tally("attack")}</div>
-      <div class="nb-dots">${dots("attack")}</div>
+    <div class="stat2" data-tip="The 21 seats in the panels below.">
+      <div class="k">Watch seats</div>
+      <div class="v">${ready ? watchTally("defend").ahead + watchTally("attack").ahead : "–"}<small> / ${watchSeats("defend").length + watchSeats("attack").length}</small></div>
+      <div class="r">${ready ? `holding ${watchTally("defend").ahead} · gaining ${watchTally("attack").ahead}` : "awaiting results"}</div>
     </div>
   </div>`;
+
+  const column = (side, title, word) => {
+    const t = watchTally(side);
+    return `<div>
+      <div class="col-head"><h3>${title}</h3><span class="tally">${word} <b>${t.ahead}</b> / ${t.total}</span></div>
+      ${labelsRow("NAT margin")}
+      ${watchSeats(side).map((e) => natRow(race(e))).join("")}
+    </div>`;
+  };
+  const others = WATCH_GROUPS.find((g) => g.side === "other");
+  const otherRows = others.seats.map(([e]) => leadRow(race(e)));
+  const half = Math.ceil(otherRows.length / 2);
+
+  document.getElementById("watch").innerHTML = `${board}
+    <div class="cols">${column("defend", "National defending", "holding")}${column("attack", "National chasing", "gaining")}</div>
+    <div class="legend">Bar: National's margin, ±${MARGIN_SCALE}% full width. Colour shows who leads. <span class="close">▲</span> within ${CLOSE_MARGIN} votes. Click a seat for detail.</div>
+    <details class="others"${state.othersOpen ? " open" : ""}>
+      <summary>${esc(others.title)} (${others.seats.length})</summary>
+      <div class="cols"><div>${labelsRow("Lead")}${otherRows.slice(0, half).join("")}</div><div>${labelsRow("Lead")}${otherRows.slice(half).join("")}</div></div>
+    </details>`;
 }
 
-// A watch seat seen from National's side.
-function natCard(rc, f, nv, side) {
+const watchSeats = (side) => WATCH_GROUPS.find((g) => g.side === side).seats.map(([e]) => e);
+function watchTally(side) {
+  const seats = watchSeats(side);
+  return { ahead: seats.filter((e) => natView(race(e))?.ahead).length, total: seats.length };
+}
+
+const labelsRow = (what) => `<div class="mrow labels" aria-hidden="true"><span>Leads</span><span>Seat</span><span>${what}</span><span class="n">votes</span><span class="n">%</span><span class="n">cntd</span></div>`;
+
+function marginBar(cls, share, oneway) {
+  const w = (Math.min(Math.abs(share), MARGIN_SCALE) / MARGIN_SCALE) * (oneway ? 100 : 50);
+  const dir = share >= 0 ? "right" : "left";
+  return `<span class="mbar${oneway ? " oneway" : ""}" aria-hidden="true"><span class="fill ${dir} ${cls}" style="width:${w}%"></span><span class="zero"></span></span>`;
+}
+
+function seatTip(rc, line) {
   const w = WATCH.get(rc.e);
-  const held = `2023: ${heldChip(w.held)}${w.margin ? ` by ${esc(w.margin)}` : ""}`;
-  let body, leaderCls = "";
-  if (!rc.started) {
-    body = `<div class="waiting">Waiting for first results</div>`;
-  } else if (!nv) {
-    body = `<div class="waiting">No National candidate</div>`;
-  } else {
-    const natCls = party(nv.nat.p).cls, rivalCls = party(nv.rival.p).cls;
-    leaderCls = nv.ahead ? natCls : rivalCls;
-    const word = nv.tied ? "Tied" : VERDICT[side][nv.ahead ? "ahead" : "behind"];
-    const vs = nv.ahead ? "" : ` to ${esc(party(nv.rival.p).label)}`;
-    body = `
-    <div class="lead">
-      <span class="verdict ${nv.tied ? "tied" : leaderCls}">${word}${side === "defend" && !nv.ahead && !nv.tied ? vs : ""}</span>
-      <span class="margin">${nv.diff > 0 ? "+" : nv.diff < 0 ? "−" : ""}${fmt(Math.abs(nv.diff))}</span>
-    </div>
-    <div class="runner">${esc(surname(nv.nat.name))} (NAT) ${fmt(nv.nat.votes)} v ${esc(surname(nv.rival.name))} (${esc(party(nv.rival.p).label)}) ${fmt(nv.rival.votes)}</div>
-    <div class="duel" aria-hidden="true">
-      <span class="${natCls}" style="width:${(nv.nat.votes / rc.total) * 100}%"></span>
-      <span class="${rivalCls}" style="width:${(nv.rival.votes / rc.total) * 100}%"></span>
-      <span class="rest"></span>
-    </div>
-    <div class="progress" aria-hidden="true"><span style="width:${rc.pctPlaces}%"></span></div>
-    <div class="meta">
-      <span>${pct(rc.pctPlaces, 0)} counted</span>
-      ${f.close ? `<span class="tag close">▲ Close</span>` : ""}
-      ${rc.lead !== nv.nat && rc.lead !== nv.rival ? `<span>Leader: ${esc(rc.lead.name)} (${esc(party(rc.lead.p).label)})</span>` : ""}
-    </div>`;
+  return [rc.name, line, w ? `2023: ${party([...state.ref.parties.values()].find((p) => p.abbrev === w.held)?.p).label}${w.margin ? ` by ${w.margin}` : ""}` : "", w?.note ?? ""].filter(Boolean).join("\n");
+}
+
+// One watch seat from National's side: positive margin means National leads.
+function natRow(rc) {
+  const nv = natView(rc);
+  if (!nv) {
+    return `<button type="button" class="mrow" data-e="${rc.e}" data-tip="${esc(seatTip(rc, rc.started ? "No National candidate" : "Waiting for results"))}">
+      <span></span><span class="mname">${esc(rc.name)}</span>${marginBar("", 0)}<span class="n dim">–</span><span class="n dim">–</span><span class="n dim">${rc.started ? pct(rc.pctPlaces, 0) : "–"}</span></button>`;
   }
-  return `<button type="button" class="seat ${leaderCls}" data-e="${rc.e}" aria-label="${esc(rc.name)}, details">
-    <div class="top"><span class="name">${esc(rc.name)}</span><span class="eno">e${String(rc.e).padStart(2, "0")}</span></div>
-    ${body}
-    <div class="held">${held}</div>
-    <div class="note">${esc(w.note)}</div>
+  const leader = nv.ahead ? nv.nat : rc.lead;
+  const share = (nv.diff / rc.total) * 100;
+  const close = Math.abs(nv.diff) < CLOSE_MARGIN;
+  const sign = nv.diff > 0 ? "+" : nv.diff < 0 ? "−" : "";
+  const line = `${nv.nat.name} (NAT) ${fmt(nv.nat.votes)} v ${nv.rival.name} (${party(nv.rival.p).label}) ${fmt(nv.rival.votes)}`;
+  return `<button type="button" class="mrow" data-e="${rc.e}" data-tip="${esc(seatTip(rc, line))}" aria-label="${esc(`${rc.name}: National ${nv.ahead ? "ahead" : "behind"} by ${fmt(Math.abs(nv.diff))}`)}">
+    ${chip(leader.p)}
+    <span class="mname">${esc(rc.name)}</span>
+    ${marginBar(party(leader.p).cls, share)}
+    <span class="n"><span class="${close ? "close" : ""}">${close ? "▲" : ""}${sign}${fmt(Math.abs(nv.diff))}</span></span>
+    <span class="n">${sign}${Math.abs(share).toFixed(1)}</span>
+    <span class="n dim">${pct(rc.pctPlaces, 0)}</span>
   </button>`;
 }
 
-function seatCard(rc, f) {
-  const w = WATCH.get(rc.e);
-  const held = `2023: ${heldChip(w.held)}${w.margin ? ` by ${esc(w.margin)}` : ""}`;
-  const leadParty = rc.lead ? party(rc.lead.p) : null;
-  const body = rc.started ? `
-    <div class="lead">
-      ${chip(rc.lead.p)}
-      <span class="who">${esc(rc.lead.name)}</span>
-      <span class="margin">${rc.second ? "+" + fmt(rc.margin) : ""}</span>
-    </div>
-    ${rc.second ? `<div class="runner">v ${esc(rc.second.name)} (${esc(party(rc.second.p).label)}) ${fmt(rc.second.votes)}</div>` : ""}
-    <div class="duel" aria-hidden="true">
-      <span class="${leadParty.cls}" style="width:${(rc.lead.votes / rc.total) * 100}%"></span>
-      ${rc.second ? `<span class="${party(rc.second.p).cls}" style="width:${(rc.second.votes / rc.total) * 100}%"></span>` : ""}
-      <span class="rest"></span>
-    </div>
-    <div class="progress" aria-hidden="true"><span style="width:${rc.pctPlaces}%"></span></div>
-    <div class="meta">
-      <span>${pct(rc.pctPlaces, 0)} counted</span>
-      ${f.close ? `<span class="tag close">▲ Close</span>` : ""}
-      ${f.change ? `<span class="tag change">⇄ Would flip</span>` : ""}
-    </div>` : `<div class="waiting">Waiting for first results</div>`;
-  return `<button type="button" class="seat ${leadParty ? leadParty.cls : ""}" data-e="${rc.e}" aria-label="${esc(rc.name)}, details">
-    <div class="top"><span class="name">${esc(rc.name)}</span><span class="eno">e${String(rc.e).padStart(2, "0")}</span></div>
-    <div class="held">${held}</div>
-    ${body}
-    <div class="note">${esc(w.note)}</div>
+// A seat National isn't contesting seriously: leader's margin over second.
+function leadRow(rc) {
+  if (!rc.started) {
+    return `<button type="button" class="mrow" data-e="${rc.e}" data-tip="${esc(seatTip(rc, "Waiting for results"))}">
+      <span></span><span class="mname">${esc(rc.name)}</span>${marginBar("", 0, true)}<span class="n dim">–</span><span class="n dim">–</span><span class="n dim">–</span></button>`;
+  }
+  const share = rc.second ? (rc.margin / rc.total) * 100 : 100;
+  const close = rc.margin !== null && rc.margin < CLOSE_MARGIN;
+  const line = rc.second ? `${rc.lead.name} (${party(rc.lead.p).label}) ${fmt(rc.lead.votes)} v ${rc.second.name} (${party(rc.second.p).label}) ${fmt(rc.second.votes)}` : rc.lead.name;
+  return `<button type="button" class="mrow" data-e="${rc.e}" data-tip="${esc(seatTip(rc, line))}">
+    ${chip(rc.lead.p)}
+    <span class="mname">${esc(rc.name)}</span>
+    ${marginBar(party(rc.lead.p).cls, share, true)}
+    <span class="n"><span class="${close ? "close" : ""}">${close ? "▲" : ""}${fmt(rc.margin ?? 0)}</span></span>
+    <span class="n">${share.toFixed(1)}</span>
+    <span class="n dim">${pct(rc.pctPlaces, 0)}</span>
   </button>`;
 }
 
@@ -1018,20 +975,13 @@ async function start() {
 // UI events
 // ====================================================================
 
-document.querySelector(".filters").addEventListener("click", (ev) => {
-  const b = ev.target.closest("button[data-filter]");
-  if (!b) return;
-  state.filter = b.dataset.filter;
-  for (const x of document.querySelectorAll(".filters button")) x.setAttribute("aria-pressed", String(x === b));
-  renderWatch();
-});
 document.getElementById("watch").addEventListener("click", (ev) => {
-  const card = ev.target.closest(".seat, .nb-dot");
-  if (card) openDetail(Number(card.dataset.e));
+  const row = ev.target.closest(".mrow[data-e]");
+  if (row) openDetail(Number(row.dataset.e));
 });
 // Remember whether "Other seats" is open; renderWatch rebuilds it on every update.
 document.getElementById("watch").addEventListener("toggle", (ev) => {
-  if (ev.target.matches("details.others") && state.filter === "all") state.othersOpen = ev.target.open;
+  if (ev.target.matches("details.others")) state.othersOpen = ev.target.open;
 }, true);
 const body = document.getElementById("el-body");
 body.addEventListener("click", (ev) => { const tr = ev.target.closest("tr[data-e]"); if (tr) openDetail(Number(tr.dataset.e)); });
