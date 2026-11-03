@@ -1,0 +1,1256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Election Night Results</title>
+<style>
+:root {
+  --bg: #f6f5f2;
+  --surface: #fcfcfb;
+  --surface-2: #efeee9;
+  --border: #dcdad3;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --text-3: #7a7973;
+  --grid: #e4e2dc;
+  --accent: #2a78d6;
+  --warn-bg: #fff4d6;
+  --warn-ink: #6b4a00;
+  --bad-bg: #fde4e1;
+  --bad-ink: #8a1c12;
+  --rehearsal: #6b2bd9;
+  --track: #e9e7e1;
+
+  --p-NAT: #00529F; --p-LAB: #D82A20; --p-GP: #098137; --p-ACT: #FDE401;
+  --p-NZF: #3D3D3D; --p-OPP: #32DAC3; --p-TPMAO: #B2001A; --p-TTTP: #7B4FA0;
+  --p-OTHER: #8a8984;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121211; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #8d8c84; --grid: #2c2c29;
+    --accent: #3987e5; --warn-bg: #3a2e0c; --warn-ink: #f3d27a; --bad-bg: #3d1713; --bad-ink: #f5a59b;
+    --rehearsal: #a77cf5; --track: #2a2a27;
+    --p-NAT: #3d8bd9; --p-LAB: #ef5a4f; --p-GP: #3cb46a; --p-NZF: #a3a3a3;
+    --p-TPMAO: #e0455a; --p-TTTP: #a884cc; --p-OTHER: #7d7c76;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121211; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
+  --text: #f0efec; --text-2: #c3c2b7; --text-3: #8d8c84; --grid: #2c2c29;
+  --accent: #3987e5; --warn-bg: #3a2e0c; --warn-ink: #f3d27a; --bad-bg: #3d1713; --bad-ink: #f5a59b;
+  --rehearsal: #a77cf5; --track: #2a2a27;
+  --p-NAT: #3d8bd9; --p-LAB: #ef5a4f; --p-GP: #3cb46a; --p-NZF: #a3a3a3;
+  --p-TPMAO: #e0455a; --p-TTTP: #a884cc; --p-OTHER: #7d7c76;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+button, input, select { font: inherit; color: inherit; }
+h1, h2, h3 { margin: 0; font-weight: 650; }
+h2 { font-size: 15px; letter-spacing: .01em; }
+
+/* Party colour: elements set class p-XXX and use var(--pc). */
+.p-NAT { --pc: var(--p-NAT); } .p-LAB { --pc: var(--p-LAB); } .p-GP { --pc: var(--p-GP); }
+.p-ACT { --pc: var(--p-ACT); } .p-NZF { --pc: var(--p-NZF); } .p-OPP { --pc: var(--p-OPP); }
+.p-TPMAO { --pc: var(--p-TPMAO); } .p-TTTP { --pc: var(--p-TTTP); } .p-OTHER { --pc: var(--p-OTHER); }
+
+/* ---------- header ---------- */
+header {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
+}
+header h1 { font-size: 17px; }
+.status { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; color: var(--text-2); }
+.status b { color: var(--text); font-size: 16px; }
+.status .big b { font-size: 20px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pill.ok { background: var(--surface-2); color: var(--text-2); }
+.pill.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.pill.bad { background: var(--bad-bg); color: var(--bad-ink); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.spacer { flex: 1; }
+
+.banner { padding: 7px 16px; font-size: 13px; background: var(--warn-bg); color: var(--warn-ink); }
+.banner.rehearsal {
+  background: repeating-linear-gradient(135deg, var(--rehearsal) 0 14px, color-mix(in srgb, var(--rehearsal) 82%, black) 14px 28px);
+  color: #fff; font-weight: 700; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+}
+.banner.rehearsal button { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.5); color: #fff; border-radius: 6px; padding: 2px 10px; cursor: pointer; }
+.banner.rehearsal input[type=range] { width: 200px; accent-color: #fff; }
+[hidden] { display: none !important; }
+
+/* ---------- layout ---------- */
+main { padding: 16px; display: grid; gap: 16px; grid-template-columns: minmax(300px, 380px) 1fr; align-items: start; max-width: 1600px; margin: 0 auto; }
+main > .wide { grid-column: 1 / -1; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+.card-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.sub { color: var(--text-3); font-size: 12px; }
+.empty { color: var(--text-3); padding: 20px 4px; text-align: center; }
+
+/* ---------- party vote bars ---------- */
+.pv { display: grid; grid-template-columns: 34px 1fr auto; gap: 7px 8px; align-items: center; position: relative; }
+.pv .ab { font-weight: 700; font-size: 12px; }
+.pv .track { position: relative; height: 18px; }
+.pv .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--pc); border-radius: 0 4px 4px 0; min-width: 1px; }
+.p-ACT .fill, .p-ACT.fill, .chip.p-ACT { box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+.pv .val { text-align: right; white-space: nowrap; font-size: 13px; }
+.pv .val .seats { color: var(--text-3); margin-left: 6px; }
+.pv-axis { position: relative; height: 14px; }
+.threshold { position: absolute; top: -4px; bottom: -4px; border-left: 1.5px dashed var(--text-3); pointer-events: none; }
+.threshold-label { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; line-height: 14px; color: var(--text-3); white-space: nowrap; }
+.pv-foot { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--grid); color: var(--text-2); font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
+/* ---------- chips ---------- */
+.chip { display: inline-block; min-width: 34px; text-align: center; padding: 1px 5px; border-radius: 4px; font-size: 11px; font-weight: 700; background: var(--pc); color: #fff; letter-spacing: .02em; }
+.chip.p-ACT, .chip.p-OPP { color: #111; }
+.tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.tag.close { background: var(--warn-bg); color: var(--warn-ink); }
+.tag.change { background: var(--bad-bg); color: var(--bad-ink); }
+
+/* ---------- is national winning? ---------- */
+.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--grid); border: 1px solid var(--grid); border-radius: 8px; overflow: hidden; margin-bottom: 14px; }
+@media (max-width: 700px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat2 { background: var(--surface); padding: 8px 12px; min-width: 0; }
+.stat2 .k { font-size: 11px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.stat2 .v { font-size: 28px; font-weight: 700; line-height: 1.15; }
+.stat2 .v small { font-size: 14px; color: var(--text-3); font-weight: 500; }
+.stat2 .r { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; }
+@media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+.col-head { display: flex; align-items: baseline; gap: 8px; padding: 0 2px 4px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
+.col-head h3 { font-size: 13px; }
+.col-head .tally { margin-left: auto; font-size: 13px; color: var(--text-2); }
+.col-head .tally b { color: var(--text); font-size: 15px; }
+.mrow {
+  display: grid; grid-template-columns: 38px minmax(0, 1fr) 84px 54px 46px 34px; gap: 8px; align-items: center;
+  width: 100%; border: 0; background: none; text-align: left; padding: 4px 2px; border-bottom: 1px solid var(--grid); cursor: pointer;
+}
+.mrow:hover, .mrow:focus-visible { background: var(--surface-2); outline: none; }
+.mrow.labels { cursor: default; font-size: 11px; color: var(--text-3); padding-top: 2px; padding-bottom: 2px; }
+.mrow.labels:hover { background: none; }
+.mrow .mname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.mrow .n { text-align: right; white-space: nowrap; }
+.mrow .dim { color: var(--text-3); font-size: 12px; }
+.mrow .close { background: var(--warn-bg); color: var(--warn-ink); border-radius: 4px; padding: 0 3px; font-weight: 700; }
+.mbar { position: relative; height: 12px; background: var(--track); border-radius: 2px; }
+.mbar .zero { position: absolute; left: 50%; top: -2px; bottom: -2px; border-left: 1px solid var(--text-3); }
+.mbar.oneway .zero { left: 0; }
+.mbar .fill { position: absolute; top: 0; bottom: 0; background: var(--pc); }
+.mbar .fill.right { left: 50%; border-radius: 0 3px 3px 0; }
+.mbar .fill.left { right: 50%; border-radius: 3px 0 0 3px; }
+.mbar.oneway .fill.right { left: 0; }
+.legend { margin-top: 8px; font-size: 12px; color: var(--text-3); }
+details.others { margin-top: 14px; }
+details.others summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-2); padding: 4px 2px; }
+details.others .cols { margin-top: 4px; }
+
+/* ---------- every electorate ---------- */
+.list-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.list-tools input, .list-tools select { border: 1px solid var(--border); background: var(--surface); border-radius: 6px; padding: 4px 8px; }
+.list-tools input { width: 200px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { font-size: 12px; color: var(--text-3); font-weight: 600; }
+td.num, th.num { text-align: right; }
+tbody tr { cursor: pointer; }
+tbody tr:hover, tbody tr:focus-visible { background: var(--surface-2); outline: none; }
+td .who { margin-left: 6px; }
+td .mini { display: inline-block; width: 60px; height: 4px; background: var(--track); border-radius: 2px; vertical-align: middle; margin-right: 6px; overflow: hidden; }
+td .mini span { display: block; height: 100%; background: var(--text-3); }
+
+/* ---------- detail drawer ---------- */
+.drawer-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 40; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100%); z-index: 41;
+  background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; padding: 16px;
+  box-shadow: -8px 0 24px rgba(0,0,0,.15);
+}
+.drawer-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+.drawer-head h2 { font-size: 20px; }
+.drawer-head button { margin-left: auto; border: 1px solid var(--border); background: var(--surface); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 10px 0 16px; }
+.stat { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+.stat .k { font-size: 11px; color: var(--text-3); }
+.stat .v { font-size: 17px; font-weight: 650; }
+.bars { display: grid; gap: 8px; }
+.bar-row .lbl { display: flex; align-items: baseline; gap: 6px; font-size: 13px; margin-bottom: 3px; }
+.bar-row .lbl .n { margin-left: auto; color: var(--text-2); white-space: nowrap; }
+.bar-row .track { height: 10px; background: var(--track); border-radius: 0 4px 4px 0; }
+.bar-row .fill { height: 100%; background: var(--pc); border-radius: 0 4px 4px 0; min-width: 1px; }
+.drawer h3 { font-size: 13px; color: var(--text-2); margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .05em; }
+.drawer .note { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; color: var(--text-2); font-size: 13px; }
+
+/* ---------- tooltip ---------- */
+#tip {
+  position: fixed; z-index: 60; pointer-events: none; background: var(--text); color: var(--surface);
+  padding: 6px 9px; border-radius: 6px; font-size: 12px; max-width: 260px; white-space: pre-line; display: none;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Election Night 2026</h1>
+  <div class="status" id="status"></div>
+  <div class="spacer"></div>
+  <span id="health" class="pill ok"><span class="dot"></span>Starting…</span>
+</header>
+<div class="banner rehearsal" id="rehearsal" hidden>
+  <span>REHEARSAL: FAKE RESULTS, NOT REAL DATA</span>
+  <button id="rh-play" type="button">Pause</button>
+  <button id="rh-restart" type="button">Restart</button>
+  <label>Night progress <input id="rh-scrub" type="range" min="0" max="1000" value="0"></label>
+  <span id="rh-clock"></span>
+</div>
+<div class="banner">Preliminary results only. Special votes (up to 700,000) are counted later; official results are declared Friday 27 November.</div>
+
+<main>
+  <section class="card" aria-labelledby="pv-title">
+    <div class="card-head">
+      <h2 id="pv-title">Party vote</h2>
+      <span class="sub">% of party votes counted · seats</span>
+    </div>
+    <div id="partyvote"></div>
+  </section>
+
+  <section class="card" aria-labelledby="ws-title">
+    <div class="card-head">
+      <h2 id="ws-title">Is National winning?</h2>
+      <span class="sub" id="ws-sub"></span>
+      <div class="filters" role="group" aria-label="Filter seats to watch">
+        <button type="button" data-filter="all" aria-pressed="true">All</button>
+        <button type="button" data-filter="behind" aria-pressed="false">National behind</button>
+        <button type="button" data-filter="close" aria-pressed="false">Close (&lt;500)</button>
+      </div>
+    </div>
+    <div id="watch"></div>
+  </section>
+
+  <section class="card wide" aria-labelledby="el-title">
+    <div class="card-head">
+      <h2 id="el-title">Every electorate</h2>
+      <span class="sub" id="el-sub"></span>
+      <div class="list-tools">
+        <input id="el-search" type="search" placeholder="Search electorate or candidate" aria-label="Search electorates">
+        <select id="el-sort" aria-label="Sort electorates">
+          <option value="name">A–Z</option>
+          <option value="margin">Closest first</option>
+          <option value="counted">Least counted first</option>
+          <option value="number">Electorate number</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Electorate</th><th>Leading</th><th class="num">Margin</th><th>Runner-up</th><th>Counted</th><th></th></tr></thead>
+        <tbody id="el-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div class="drawer-bg" id="drawer-bg" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-modal="true" role="dialog" aria-labelledby="dr-title"></aside>
+<div id="tip" role="tooltip"></div>
+
+<script>
+"use strict";
+
+// ====================================================================
+// Config
+// ====================================================================
+
+const RELAYS = [
+  "https://election-night-relay.hujustinapple.workers.dev/xml/",
+  "http://localhost:8787/xml/", // backup: `npm run dev` in relay/
+];
+const PARAMS = new URLSearchParams(location.search);
+const REPLAY = PARAMS.has("replay");
+const POLL_MS = REPLAY ? 2000 : 15000;
+const FULL_REFRESH_EVERY = 4; // also re-check every eNN this often, even if election.xml is unchanged
+const STALE_MS = REPLAY ? 10000 : 60000;
+const CLOSE_MARGIN = 500;
+const ELECTORS = 3633546; // statistics.xml, used by replay only
+
+// Display labels; feed abbreviations are the keys.
+const PARTY_LABEL = { NAT: "NAT", LAB: "LAB", GP: "GRN", ACT: "ACT", NZF: "NZF", OPP: "OPP", TPMAO: "TPM", TTTP: "TTTP" };
+const PARTY_ORDER = ["NAT", "LAB", "GP", "ACT", "NZF", "OPP", "TPMAO", "TTTP"]; // order before any votes exist
+
+// From the 1News, Herald, RNZ and Spinoff previews, framed around one question:
+// is National winning? `held` is the 2023 winner's party (feed abbreviation);
+// new seats use the predecessor seat. `side` is National's role in the race.
+const WATCH_GROUPS = [
+  { side: "defend", title: "National defending", seats: [
+    [2, "NAT", "396", "National's most marginal seat. Weenink v McLellan (LAB) rematch."],
+    [15, "NAT", "1,332", "Bishop v Andersen (LAB). If Bishop loses, he's likely out of Parliament."],
+    [56, "NAT", "as New Lynn", "New seat, boundaries favour Labour. Loheni v Walters (LAB)."],
+    [27, "NAT", null, "Cheung v Michael Wood (LAB), who is attempting a comeback."],
+    [60, "NAT", "~1,000", "Open seat: Milne v Paterson (LAB), with Cleine (NZF) also running."],
+    [55, "NAT", "2,816", "Butterick v McAnulty (LAB). NZ First's Ron Mark may split the right."],
+    [8, "NAT", "3,199", "Kirkpatrick v Luxton (LAB). A toss-up."],
+    [24, "NAT", "4,617", "Fleming v Radhakrishnan (LAB). Classic swing seat."],
+    [12, "NAT", "~5,000", "Hamilton v Dansey (LAB). Holding it signals a solid night."],
+    [61, "NAT", "5,512", "Bates v Labour. Losing it would mean a very bad night."],
+    [20, "NAT", "6,271 as Ōtaki", "Costley v Handford (LAB). Redrawn to take in red parts of Mana."],
+    [46, "NAT", "8,775", "Nakhle's big majority, but new boundaries favour the left."],
+    [57, "NAT", null, "Anderson v Damien O'Connor (LAB), with NZ First's Michael Laws in the mix."],
+  ]},
+  { side: "attack", title: "National chasing", seats: [
+    [25, "LAB", "18", "Lee v White (LAB). A three-way left split could let Lee through."],
+    [29, "LAB", "26", "Cameron v Boyack (LAB), a rematch after a recount."],
+    [14, "LAB", "131 as Te Atatū", "Nicholas v Twyford (LAB), a rematch on new boundaries."],
+    [45, "LAB", "<1,500", "French v Leary (LAB) on unchanged boundaries."],
+    [64, "LAB", "~3%", "Summerfield v Yanzick (LAB). Woods has gone and boundaries shift right."],
+    [36, "LAB", "~9%", "Bansal v Utikere (LAB). Boundary changes may tighten it."],
+    [47, "ACT", null, "Muralidhar v Christmas (ACT). A split right could let Harris (LAB) in."],
+    [10, "ACT", null, "Goldsmith v Seymour (ACT). No electorate deal this time."],
+  ]},
+  { side: "other", title: "Other seats to watch: left v left and Māori seats", seats: [
+    [4, "LAB", "<5%", "Open race. Greens chasing a third city-centre seat."],
+    [58, "GP", "as Rongotai", "Genter v Renney, a straight left-on-left fight."],
+    [59, "GP", "as Wellington Central", "Tamatha Paul v Ayesha Verrall."],
+    [1, "GP", "~4,000", "Swarbrick going for a third term v Chen and Kinser."],
+    [7, "LAB", "~20%", "Hernandez (GRN) running hard at Brooking."],
+    [69, "TPMAO", null, "Four-way race. Lyndon (GRN) narrowly ahead in polling."],
+    [70, "TPMAO", null, "Ferris now independent. Polls split between him and Ramsden (LAB)."],
+    [68, "TPMAO", null, "Ngarewa-Packer v Katene, with many undecided."],
+    [65, "TPMAO", null, "Maipi-Clarke well ahead in polling."],
+    [67, "TPMAO", "by-election", "Kaipara favoured after Labour dropped Leoni."],
+  ]},
+];
+const WATCH = new Map();
+for (const g of WATCH_GROUPS) for (const [e, held, margin, note] of g.seats) WATCH.set(e, { held, margin, note, side: g.side });
+
+// ====================================================================
+// State
+// ====================================================================
+
+const state = {
+  ref: null,          // { parties, candidates, electorates, byElectorate }
+  election: null,     // parsed election.xml
+  seats: new Map(),   // e_no -> parsed eNN.xml
+  lastSuccess: 0,
+  lastError: null,
+  relay: null,        // which relay answered last
+  tick: 0,
+  filter: "all",
+  othersOpen: false,
+  selected: null,
+};
+const lastModified = new Map(); // path -> Last-Modified, for If-Modified-Since
+
+// ====================================================================
+// Fetching
+// ====================================================================
+
+class FeedError extends Error {}
+
+// Returns { status: 200, text } or { status: 304 } or { status: 404 }.
+async function getFeed(path, { conditional = true } = {}) {
+  if (REPLAY && Replay.handles(path)) return Replay.get(path, conditional ? lastModified.get(path) : null);
+  const headers = {};
+  if (conditional && lastModified.has(path)) headers["If-Modified-Since"] = lastModified.get(path);
+  let lastErr;
+  for (const base of RELAYS) {
+    try {
+      const res = await fetch(base + path, { headers, cache: "no-store" });
+      if (res.status === 304 || res.status === 404) { state.relay = base; return { status: res.status }; }
+      if (!res.ok) throw new FeedError(`${res.status} from relay`);
+      const text = await res.text();
+      const lm = res.headers.get("Last-Modified");
+      if (lm) lastModified.set(path, lm);
+      state.relay = base;
+      return { status: 200, text };
+    } catch (err) {
+      lastErr ??= err; // report the main relay's error, not the backup's
+    }
+  }
+  throw lastErr ?? new FeedError("No relay answered");
+}
+
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) { const k = i++; out[k] = await fn(items[k]); }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+// ====================================================================
+// Parsing (structure per Media Feed Specification 8.2, section 3.2.1)
+// ====================================================================
+
+function xml(text) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  if (doc.querySelector("parsererror")) throw new FeedError("Feed file is not valid XML");
+  return doc;
+}
+const num = (el, sel) => { const n = el.querySelector(sel); return n ? Number(n.textContent.trim()) || 0 : 0; };
+const txt = (el, sel) => el.querySelector(sel)?.textContent.trim() ?? "";
+const votesMap = (el, sel, attr) => {
+  const m = new Map();
+  for (const n of el.querySelectorAll(sel)) m.set(Number(n.getAttribute(attr)), num(n, "votes"));
+  return m;
+};
+
+function parseParties(text) {
+  const m = new Map();
+  for (const p of xml(text).querySelectorAll("party")) {
+    m.set(Number(p.getAttribute("p_no")), {
+      p: Number(p.getAttribute("p_no")),
+      abbrev: txt(p, "abbrev"),
+      name: txt(p, "short_name"),
+      registered: txt(p, "registered") === "yes",
+    });
+  }
+  return m;
+}
+function parseCandidates(text) {
+  const m = new Map();
+  for (const c of xml(text).querySelectorAll("candidate")) {
+    m.set(Number(c.getAttribute("c_no")), {
+      c: Number(c.getAttribute("c_no")),
+      name: displayName(txt(c, "candidate_name")),
+      e: num(c, "electorate"),
+      p: num(c, "party"),
+    });
+  }
+  return m;
+}
+function parseElectorates(text) {
+  const m = new Map();
+  for (const e of xml(text).querySelectorAll("electorate")) m.set(Number(e.getAttribute("e_no")), txt(e, "electorate_name"));
+  return m;
+}
+function parseElection(text) {
+  const root = xml(text).documentElement;
+  const parties = [];
+  for (const p of root.querySelectorAll("partystatus > party")) {
+    parties.push({
+      p: Number(p.getAttribute("p_no")),
+      votes: num(p, "votes"),
+      pct: num(p, "percent_votes"),
+      partySeats: num(p, "party_seats"),
+      electorateSeats: num(p, "candidate_seats"),
+      seats: num(p, "total_seats"),
+    });
+  }
+  return {
+    updated: root.getAttribute("updated"),
+    placesCounted: num(root, "statistics > total_voting_places_counted"),
+    pctPlaces: num(root, "statistics > percent_voting_places_counted"),
+    votes: num(root, "statistics > total_votes_cast"),
+    pctTurnout: num(root, "statistics > percent_votes_cast"),
+    parties,
+  };
+}
+function parseElectorate(text) {
+  const root = xml(text).documentElement;
+  return {
+    e: Number(root.getAttribute("e_no")),
+    updated: root.getAttribute("updated"),
+    places: num(root, "statistics > total_voting_places"),
+    placesCounted: num(root, "statistics > total_voting_places_counted"),
+    pctPlaces: num(root, "statistics > percent_voting_places_counted"),
+    votes: num(root, "statistics > total_votes_cast"),
+    partyInformals: num(root, "statistics > total_party_informals"),
+    candidateInformals: num(root, "statistics > total_candidate_informals"),
+    partyVotes: votesMap(root, "partyvotes > party", "p_no"),
+    candidateVotes: votesMap(root, "candidatevotes > candidate", "c_no"),
+  };
+}
+
+// "DE ANDA, Alma" -> "Alma De Anda"
+function displayName(raw) {
+  const [last, first = ""] = raw.split(",").map((s) => s.trim());
+  const cased = last.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()).replace(/\bMc(\p{L})/gu, (m, a) => "Mc" + a.toUpperCase());
+  return first ? `${first} ${cased}` : cased;
+}
+
+// ====================================================================
+// Derived data
+// ====================================================================
+
+function party(p) {
+  const info = state.ref.parties.get(p);
+  if (!info || !p) return { abbrev: "IND", label: "IND", name: "Independent", cls: "p-OTHER" };
+  const label = PARTY_LABEL[info.abbrev] ?? info.abbrev;
+  return { abbrev: info.abbrev, label, name: info.name, cls: PARTY_LABEL[info.abbrev] ? "p-" + info.abbrev : "p-OTHER" };
+}
+
+// Leader, runner-up, margin and progress for one electorate.
+function race(e) {
+  const r = state.seats.get(e);
+  const cands = (state.ref.byElectorate.get(e) ?? []).map((c) => ({ ...c, votes: r?.candidateVotes.get(c.c) ?? 0 }));
+  cands.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));
+  const total = cands.reduce((s, c) => s + c.votes, 0);
+  // The feed has every eNN file and final="true" before any results; only votes mean the count has started.
+  const started = total > 0;
+  const [lead, second] = cands;
+  return {
+    e,
+    name: state.ref.electorates.get(e) ?? `Electorate ${e}`,
+    started,
+    cands,
+    total,
+    lead: started ? lead : null,
+    second: started ? second : null,
+    margin: started && second ? lead.votes - second.votes : null,
+    pctPlaces: r?.pctPlaces ?? 0,
+    places: r?.places ?? 0,
+    placesCounted: r?.placesCounted ?? 0,
+    data: r,
+  };
+}
+
+function flags(rc) {
+  const w = WATCH.get(rc.e);
+  const close = rc.started && rc.margin !== null && rc.margin < CLOSE_MARGIN;
+  const change = rc.started && w && party(rc.lead.p).abbrev !== w.held;
+  return { close, change };
+}
+
+// The race from National's side: its candidate against the best non-National one.
+function natView(rc) {
+  if (!rc.started) return null;
+  const nat = rc.cands.find((c) => party(c.p).abbrev === "NAT");
+  if (!nat) return null;
+  const rival = rc.cands.find((c) => c !== nat) ?? { name: "nobody", votes: 0, p: 0 };
+  const diff = nat.votes - (rival?.votes ?? 0);
+  return { nat, rival, diff, ahead: diff > 0, tied: diff === 0 };
+}
+
+// Sainte-Laguë over 120 seats for parties on 5% or with an electorate.
+// Returns each qualifying party's proportional seats (before any overhang).
+function allocateSeats(partyVotes, wins) {
+  const total = [...partyVotes.values()].reduce((a, b) => a + b, 0) || 1;
+  const qual = [...partyVotes.keys()].filter((p) => partyVotes.get(p) / total >= 0.05 || (wins.get(p) ?? 0) > 0);
+  const alloc = new Map(qual.map((p) => [p, 0]));
+  for (let i = 0; i < 120 && qual.length; i++) {
+    let best = null, bestQ = -1;
+    for (const p of qual) { const qv = partyVotes.get(p) / (2 * alloc.get(p) + 1); if (qv > bestQ) { bestQ = qv; best = p; } }
+    alloc.set(best, alloc.get(best) + 1);
+  }
+  return alloc;
+}
+
+// ====================================================================
+// Rendering helpers
+// ====================================================================
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (n) => n.toLocaleString("en-NZ");
+const pct = (n, d = 1) => `${n.toFixed(d)}%`;
+const chip = (p) => { const x = party(p); return `<span class="chip ${x.cls}" title="${esc(x.name)}">${esc(x.label)}</span>`; };
+const heldChip = (abbrev) => {
+  const entry = [...state.ref.parties.values()].find((p) => p.abbrev === abbrev);
+  return entry ? chip(entry.p) : esc(abbrev);
+};
+function feedTime(s) {
+  if (!s) return "–";
+  const [d, t] = s.split("T");
+  const [h, m] = t.split(":").map(Number);
+  const day = d === "2026-11-07" ? "" : ` ${d}`;
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")}${h < 12 ? "am" : "pm"}${day}`;
+}
+const surname = (name) => name.split(" ").slice(-1)[0];
+
+// ====================================================================
+// Header status
+// ====================================================================
+
+function renderStatus() {
+  const el = state.election;
+  const s = document.getElementById("status");
+  if (!el) { s.innerHTML = ""; return; }
+  s.innerHTML = `
+    <span class="big"><b>${pct(el.pctPlaces)}</b> of voting places counted</span>
+    <span><b>${fmt(el.votes)}</b> votes</span>
+    <span>Feed updated <b>${feedTime(el.updated)}</b></span>`;
+}
+
+function renderHealth() {
+  const h = document.getElementById("health");
+  const age = Date.now() - state.lastSuccess;
+  const backup = state.relay && state.relay !== RELAYS[0] && !REPLAY;
+  let cls = "ok", label = `Live · checked ${Math.round(age / 1000)}s ago`;
+  if (REPLAY) label = `Rehearsal · checked ${Math.round(age / 1000)}s ago`;
+  if (backup) { cls = "warn"; label = `On backup relay · checked ${Math.round(age / 1000)}s ago`; }
+  if (!state.lastSuccess) { cls = state.lastError ? "bad" : "ok"; label = state.lastError ? "Can't reach the feed" : "Connecting…"; }
+  else if (age > STALE_MS) { cls = "bad"; label = `Stale: no update for ${Math.round(age / 1000)}s`; }
+  h.className = `pill ${cls}`;
+  h.innerHTML = `<span class="dot"></span>${esc(label)}`;
+  h.title = state.lastError ? `Last error: ${state.lastError}` : "";
+}
+
+// ====================================================================
+// 3. Party vote
+// ====================================================================
+
+function renderPartyVote() {
+  const box = document.getElementById("partyvote");
+  const el = state.election;
+  if (!el) { box.innerHTML = `<div class="empty">Loading…</div>`; return; }
+
+  const rows = el.parties.map((r) => ({ ...r, info: party(r.p) }));
+  const anyVotes = rows.some((r) => r.votes > 0);
+  rows.sort((a, b) => anyVotes
+    ? b.votes - a.votes
+    : (PARTY_ORDER.indexOf(a.info.abbrev) + 1 || 99) - (PARTY_ORDER.indexOf(b.info.abbrev) + 1 || 99));
+
+  // Up to eight named bars; the rest fold into "Others".
+  const shown = rows.slice(0, 8);
+  const rest = rows.slice(8);
+  const others = rest.length ? {
+    others: true, votes: rest.reduce((s, r) => s + r.votes, 0), pct: rest.reduce((s, r) => s + r.pct, 0),
+    seats: rest.reduce((s, r) => s + r.seats, 0), electorateSeats: rest.reduce((s, r) => s + r.electorateSeats, 0), partySeats: 0,
+    info: { label: "OTH", name: `${rest.length} other parties`, cls: "p-OTHER" },
+  } : null;
+  if (others) shown.push(others);
+
+  const scaleMax = Math.max(40, ...shown.map((r) => r.pct)) * 1.02;
+  const at = (v) => `${(v / scaleMax) * 100}%`;
+  box.innerHTML = `
+    <div class="pv">
+      <span></span>
+      <div class="pv-axis"><span class="threshold-label" style="left:${at(5)}">5% threshold</span></div>
+      <span></span>
+      ${shown.map((r) => `
+        <span class="ab">${esc(r.info.label)}</span>
+        <div class="track ${r.info.cls}" data-tip="${esc(`${r.info.name}\n${fmt(r.votes)} votes · ${pct(r.pct)}\n${r.seats} seats (${r.electorateSeats} electorate, ${r.seats - r.electorateSeats} list)`)}">
+          <div class="fill" style="width:${at(r.pct)}"></div>
+          <div class="threshold" style="left:${at(5)}"></div>
+        </div>
+        <span class="val">${anyVotes ? pct(r.pct) : "–"}<span class="seats">${anyVotes ? `${r.seats} seats` : ""}</span></span>
+      `).join("")}
+    </div>
+    ${anyVotes ? "" : `<p class="sub" style="margin:10px 0 0">No votes counted yet. First results expected about 7:30pm.</p>`}
+    ${renderParliamentLine(el)}`;
+}
+
+function renderParliamentLine(el) {
+  const total = el.parties.reduce((s, r) => s + r.seats, 0);
+  if (!total) return "";
+  const majority = Math.floor(total / 2) + 1;
+  const overhang = total - 120;
+  return `<div class="pv-foot">
+    <span>Parliament: <b>${total}</b> seats${overhang > 0 ? ` (overhang +${overhang})` : ""}</span>
+    <span>Majority: <b>${majority}</b></span>
+  </div>`;
+}
+
+// ====================================================================
+// 5. Seats to watch
+// ====================================================================
+
+// Verdict wording from National's side.
+const VERDICT = {
+  defend: { ahead: "Holding", behind: "Losing" },
+  attack: { ahead: "Gaining", behind: "Short" },
+};
+
+function renderWatch() {
+  const board = renderNatBoard();
+  let closeCount = 0;
+  const groups = WATCH_GROUPS.map((g) => {
+    const cards = g.seats.map(([e]) => {
+      const rc = race(e);
+      const f = flags(rc);
+      const nv = g.side === "other" ? null : natView(rc);
+      if (f.close) closeCount++;
+      if (state.filter === "close" && !f.close) return "";
+      if (state.filter === "behind" && !(nv && !nv.ahead)) return "";
+      return g.side === "other" ? seatCard(rc, f) : natCard(rc, f, nv, g.side);
+    }).join("");
+    if (!cards) return "";
+    const grid = `<div class="seats-grid">${cards}</div>`;
+    if (g.side === "other") {
+      // Collapsed by default: these races don't decide whether National is winning.
+      return `<details class="others"${state.othersOpen || state.filter !== "all" ? " open" : ""}>
+        <summary class="group-title">${esc(g.title)} (${g.seats.length})</summary>${grid}</details>`;
+    }
+    return `<div class="group-title">${esc(g.title)} · ${groupTally(g)}</div>${grid}`;
+  }).join("");
+  document.getElementById("watch").innerHTML = board + (groups || `<div class="empty">No seats match this filter yet.</div>`);
+  document.getElementById("ws-sub").textContent = `${closeCount} watch seats within ${CLOSE_MARGIN} votes`;
+}
+
+function groupTally(g) {
+  let ahead = 0, started = 0;
+  for (const [e] of g.seats) { const nv = natView(race(e)); if (nv) { started++; if (nv.ahead) ahead++; } }
+  const word = g.side === "defend" ? "holding" : "gaining";
+  return started ? `${word} ${ahead} of ${g.seats.length}` : `${g.seats.length} seats`;
+}
+
+// The headline: how many electorates National leads, what its party vote
+// earns, and whether that leaves it with an overhang.
+function renderNatBoard() {
+  const all = [...state.ref.electorates.keys()].map(race);
+  const started = all.filter((r) => r.started);
+  const natP = [...state.ref.parties.values()].find((p) => p.abbrev === "NAT")?.p;
+  const winsByParty = new Map();
+  for (const r of started) winsByParty.set(r.lead.p, (winsByParty.get(r.lead.p) ?? 0) + 1);
+  const natWins = winsByParty.get(natP) ?? 0;
+
+  const el = state.election;
+  const partyVotes = new Map((el?.parties ?? []).map((r) => [r.p, r.votes]));
+  const natRow = el?.parties.find((r) => r.p === natP);
+  const anyVotes = natRow && [...partyVotes.values()].some((v) => v > 0);
+  const earned = anyVotes ? allocateSeats(partyVotes, winsByParty).get(natP) ?? 0 : null;
+
+  let verdict = "–", verdictNote = "Waiting for first results";
+  if (anyVotes && started.length) {
+    const overhang = natWins - earned;
+    if (overhang > 0) { verdict = `+${overhang} overhang`; verdictNote = "More electorates than its party vote earns, so no list MPs"; }
+    else { verdict = `${-overhang} list MPs`; verdictNote = "Party vote earns more than its electorates"; }
+  }
+
+  const dots = (side) => WATCH_GROUPS.find((g) => g.side === side).seats.map(([e]) => {
+    const rc = race(e);
+    const nv = natView(rc);
+    const cls = !nv ? "" : nv.ahead ? party(nv.nat.p).cls : party(nv.rival.p).cls;
+    const status = !nv ? "waiting" : nv.ahead ? `National ahead by ${fmt(nv.diff)}` : `National behind by ${fmt(-nv.diff)}`;
+    return `<button type="button" class="nb-dot ${cls}" data-e="${e}" data-tip="${esc(`${rc.name}: ${status}`)}" aria-label="${esc(`${rc.name}, ${status}`)}"></button>`;
+  }).join("");
+  const tally = (side) => {
+    const g = WATCH_GROUPS.find((x) => x.side === side);
+    let ahead = 0, behind = 0;
+    for (const [e] of g.seats) { const nv = natView(race(e)); if (nv) nv.ahead ? ahead++ : behind++; }
+    const [a, b] = side === "defend" ? ["holding", "losing"] : ["gaining", "short"];
+    return `<b>${ahead}</b> ${a} · <b>${behind}</b> ${b}`;
+  };
+
+  return `<div class="natboard">
+    <div class="nb">
+      <div class="k">Electorates National leads</div>
+      <div class="v">${started.length ? natWins : "–"} <small>of ${state.ref.electorates.size}</small></div>
+      <div class="s">${started.length} of ${state.ref.electorates.size} electorates reporting</div>
+    </div>
+    <div class="nb">
+      <div class="k">Seats its party vote earns (est.)</div>
+      <div class="v">${earned ?? "–"}${natRow && anyVotes ? ` <small>${pct(natRow.pct)}</small>` : ""}</div>
+      <div class="s">Our Sainte-Laguë estimate from counted votes</div>
+    </div>
+    <div class="nb">
+      <div class="k">Overhang or list MPs</div>
+      <div class="v">${verdict}</div>
+      <div class="s">${verdictNote}</div>
+    </div>
+    <div class="nb">
+      <div class="k">Defending ${WATCH_GROUPS.find((g) => g.side === "defend").seats.length} watch seats</div>
+      <div class="s">${tally("defend")}</div>
+      <div class="nb-dots">${dots("defend")}</div>
+    </div>
+    <div class="nb">
+      <div class="k">Chasing ${WATCH_GROUPS.find((g) => g.side === "attack").seats.length} watch seats</div>
+      <div class="s">${tally("attack")}</div>
+      <div class="nb-dots">${dots("attack")}</div>
+    </div>
+  </div>`;
+}
+
+// A watch seat seen from National's side.
+function natCard(rc, f, nv, side) {
+  const w = WATCH.get(rc.e);
+  const held = `2023: ${heldChip(w.held)}${w.margin ? ` by ${esc(w.margin)}` : ""}`;
+  let body, leaderCls = "";
+  if (!rc.started) {
+    body = `<div class="waiting">Waiting for first results</div>`;
+  } else if (!nv) {
+    body = `<div class="waiting">No National candidate</div>`;
+  } else {
+    const natCls = party(nv.nat.p).cls, rivalCls = party(nv.rival.p).cls;
+    leaderCls = nv.ahead ? natCls : rivalCls;
+    const word = nv.tied ? "Tied" : VERDICT[side][nv.ahead ? "ahead" : "behind"];
+    const vs = nv.ahead ? "" : ` to ${esc(party(nv.rival.p).label)}`;
+    body = `
+    <div class="lead">
+      <span class="verdict ${nv.tied ? "tied" : leaderCls}">${word}${side === "defend" && !nv.ahead && !nv.tied ? vs : ""}</span>
+      <span class="margin">${nv.diff > 0 ? "+" : nv.diff < 0 ? "−" : ""}${fmt(Math.abs(nv.diff))}</span>
+    </div>
+    <div class="runner">${esc(surname(nv.nat.name))} (NAT) ${fmt(nv.nat.votes)} v ${esc(surname(nv.rival.name))} (${esc(party(nv.rival.p).label)}) ${fmt(nv.rival.votes)}</div>
+    <div class="duel" aria-hidden="true">
+      <span class="${natCls}" style="width:${(nv.nat.votes / rc.total) * 100}%"></span>
+      <span class="${rivalCls}" style="width:${(nv.rival.votes / rc.total) * 100}%"></span>
+      <span class="rest"></span>
+    </div>
+    <div class="progress" aria-hidden="true"><span style="width:${rc.pctPlaces}%"></span></div>
+    <div class="meta">
+      <span>${pct(rc.pctPlaces, 0)} counted</span>
+      ${f.close ? `<span class="tag close">▲ Close</span>` : ""}
+      ${rc.lead !== nv.nat && rc.lead !== nv.rival ? `<span>Leader: ${esc(rc.lead.name)} (${esc(party(rc.lead.p).label)})</span>` : ""}
+    </div>`;
+  }
+  return `<button type="button" class="seat ${leaderCls}" data-e="${rc.e}" aria-label="${esc(rc.name)}, details">
+    <div class="top"><span class="name">${esc(rc.name)}</span><span class="eno">e${String(rc.e).padStart(2, "0")}</span></div>
+    ${body}
+    <div class="held">${held}</div>
+    <div class="note">${esc(w.note)}</div>
+  </button>`;
+}
+
+function seatCard(rc, f) {
+  const w = WATCH.get(rc.e);
+  const held = `2023: ${heldChip(w.held)}${w.margin ? ` by ${esc(w.margin)}` : ""}`;
+  const leadParty = rc.lead ? party(rc.lead.p) : null;
+  const body = rc.started ? `
+    <div class="lead">
+      ${chip(rc.lead.p)}
+      <span class="who">${esc(rc.lead.name)}</span>
+      <span class="margin">${rc.second ? "+" + fmt(rc.margin) : ""}</span>
+    </div>
+    ${rc.second ? `<div class="runner">v ${esc(rc.second.name)} (${esc(party(rc.second.p).label)}) ${fmt(rc.second.votes)}</div>` : ""}
+    <div class="duel" aria-hidden="true">
+      <span class="${leadParty.cls}" style="width:${(rc.lead.votes / rc.total) * 100}%"></span>
+      ${rc.second ? `<span class="${party(rc.second.p).cls}" style="width:${(rc.second.votes / rc.total) * 100}%"></span>` : ""}
+      <span class="rest"></span>
+    </div>
+    <div class="progress" aria-hidden="true"><span style="width:${rc.pctPlaces}%"></span></div>
+    <div class="meta">
+      <span>${pct(rc.pctPlaces, 0)} counted</span>
+      ${f.close ? `<span class="tag close">▲ Close</span>` : ""}
+      ${f.change ? `<span class="tag change">⇄ Would flip</span>` : ""}
+    </div>` : `<div class="waiting">Waiting for first results</div>`;
+  return `<button type="button" class="seat ${leadParty ? leadParty.cls : ""}" data-e="${rc.e}" aria-label="${esc(rc.name)}, details">
+    <div class="top"><span class="name">${esc(rc.name)}</span><span class="eno">e${String(rc.e).padStart(2, "0")}</span></div>
+    <div class="held">${held}</div>
+    ${body}
+    <div class="note">${esc(w.note)}</div>
+  </button>`;
+}
+
+// ====================================================================
+// Every electorate
+// ====================================================================
+
+function renderList() {
+  const q = document.getElementById("el-search").value.trim().toLowerCase();
+  const sort = document.getElementById("el-sort").value;
+  let rows = [...state.ref.electorates.keys()].map(race);
+  if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q) || r.cands.some((c) => c.name.toLowerCase().includes(q)));
+  const inf = Number.POSITIVE_INFINITY;
+  const sorters = {
+    name: (a, b) => a.name.localeCompare(b.name),
+    number: (a, b) => a.e - b.e,
+    margin: (a, b) => (a.margin ?? inf) - (b.margin ?? inf) || a.name.localeCompare(b.name),
+    counted: (a, b) => a.pctPlaces - b.pctPlaces || a.name.localeCompare(b.name),
+  };
+  rows.sort(sorters[sort]);
+  const started = [...state.ref.electorates.keys()].filter((e) => race(e).started).length;
+  document.getElementById("el-sub").textContent = `${started} of ${state.ref.electorates.size} with results`;
+  document.getElementById("el-body").innerHTML = rows.map((rc) => {
+    const f = flags(rc);
+    return `<tr tabindex="0" data-e="${rc.e}">
+      <td><b>${esc(rc.name)}</b>${WATCH.has(rc.e) ? ` <span class="sub">watch</span>` : ""}</td>
+      <td>${rc.lead ? `${chip(rc.lead.p)}<span class="who">${esc(rc.lead.name)}</span>` : `<span class="sub">–</span>`}</td>
+      <td class="num">${rc.margin !== null ? fmt(rc.margin) : `<span class="sub">–</span>`}</td>
+      <td>${rc.second ? `${chip(rc.second.p)}<span class="who">${esc(rc.second.name)}</span>` : `<span class="sub">–</span>`}</td>
+      <td><span class="mini"><span style="width:${rc.pctPlaces}%"></span></span>${pct(rc.pctPlaces, 0)}</td>
+      <td>${f.close ? `<span class="tag close">▲ Close</span>` : ""} ${f.change ? `<span class="tag change">⇄ Flip</span>` : ""}</td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="6" class="empty">No electorates match.</td></tr>`;
+}
+
+// ====================================================================
+// Electorate detail drawer
+// ====================================================================
+
+function openDetail(e) {
+  state.selected = e;
+  document.getElementById("drawer").hidden = false;
+  document.getElementById("drawer-bg").hidden = false;
+  renderDetail();
+  document.querySelector("#drawer button")?.focus();
+}
+function closeDetail() {
+  const e = state.selected;
+  state.selected = null;
+  document.getElementById("drawer").hidden = true;
+  document.getElementById("drawer-bg").hidden = true;
+  document.querySelector(`[data-e="${e}"]`)?.focus();
+}
+
+function renderDetail() {
+  if (state.selected === null) return;
+  const rc = race(state.selected);
+  const r = rc.data;
+  const w = WATCH.get(rc.e);
+  const dr = document.getElementById("drawer");
+
+  const candBars = rc.cands.map((c) => {
+    const share = rc.total ? (c.votes / rc.total) * 100 : 0;
+    const x = party(c.p);
+    return `<div class="bar-row" data-tip="${esc(`${c.name} (${x.name})\n${fmt(c.votes)} votes · ${pct(share)}`)}">
+      <div class="lbl">${chip(c.p)} <span>${esc(c.name)}</span><span class="n">${fmt(c.votes)} · ${pct(share)}</span></div>
+      <div class="track"><div class="fill ${x.cls}" style="width:${share}%"></div></div>
+    </div>`;
+  }).join("");
+
+  let partyBars = "";
+  if (r) {
+    const pv = [...r.partyVotes].map(([p, votes]) => ({ p, votes })).sort((a, b) => b.votes - a.votes);
+    const totalPv = pv.reduce((s, x) => s + x.votes, 0);
+    const top = pv.slice(0, 8);
+    const restVotes = pv.slice(8).reduce((s, x) => s + x.votes, 0);
+    partyBars = totalPv ? top.map((x) => {
+      const share = (x.votes / totalPv) * 100;
+      const pp = party(x.p);
+      return `<div class="bar-row" data-tip="${esc(`${pp.name}\n${fmt(x.votes)} votes · ${pct(share)}`)}">
+        <div class="lbl">${chip(x.p)} <span>${esc(pp.name)}</span><span class="n">${fmt(x.votes)} · ${pct(share)}</span></div>
+        <div class="track"><div class="fill ${pp.cls}" style="width:${share}%"></div></div>
+      </div>`;
+    }).join("") + (restVotes ? `<div class="sub">Others: ${fmt(restVotes)} · ${pct((restVotes / totalPv) * 100)}</div>` : "")
+      : `<div class="sub">No party votes counted yet.</div>`;
+  }
+
+  dr.innerHTML = `
+    <div class="drawer-head">
+      <div>
+        <h2 id="dr-title">${esc(rc.name)}</h2>
+        <div class="sub">Electorate ${rc.e}${r ? ` · updated ${feedTime(r.updated)}` : ""}</div>
+      </div>
+      <button type="button" data-close>Close</button>
+    </div>
+    ${w ? `<div class="note"><b>Why it matters:</b> ${esc(w.note)}<br>2023: ${heldChip(w.held)}${w.margin ? ` by ${esc(w.margin)}` : ""}</div>` : ""}
+    <div class="stats">
+      <div class="stat"><div class="k">Leading by</div><div class="v">${rc.margin !== null ? fmt(rc.margin) : "–"}</div></div>
+      <div class="stat"><div class="k">Voting places</div><div class="v">${rc.placesCounted} / ${rc.places}</div></div>
+      <div class="stat"><div class="k">Counted</div><div class="v">${pct(rc.pctPlaces)}</div></div>
+      <div class="stat"><div class="k">Votes cast</div><div class="v">${r ? fmt(r.votes) : "–"}</div></div>
+    </div>
+    <h3>Candidate vote</h3>
+    <div class="bars">${candBars || `<div class="sub">No candidates found.</div>`}</div>
+    <h3>Party vote in ${esc(rc.name)}</h3>
+    <div class="bars">${partyBars}</div>
+    ${r ? `<p class="sub">Informal: ${fmt(r.candidateInformals)} candidate, ${fmt(r.partyInformals)} party.</p>` : ""}`;
+}
+
+function renderAll() {
+  if (!state.ref) return;
+  renderStatus();
+  renderHealth();
+  renderPartyVote();
+  renderWatch();
+  renderList();
+  renderDetail();
+}
+
+// ====================================================================
+// Polling (spec section 4: watch election.xml, then fetch changed eNN files)
+// ====================================================================
+
+async function loadReference() {
+  const [p, c, e] = await Promise.all(["parties.xml", "candidates.xml", "electorates.xml"].map((f) => getFeed(f, { conditional: false })));
+  const parties = parseParties(p.text);
+  const candidates = parseCandidates(c.text);
+  const electorates = parseElectorates(e.text);
+  const byElectorate = new Map();
+  for (const cand of candidates.values()) {
+    if (!cand.e) continue;
+    if (!byElectorate.has(cand.e)) byElectorate.set(cand.e, []);
+    byElectorate.get(cand.e).push(cand);
+  }
+  state.ref = { parties, candidates, electorates, byElectorate };
+}
+
+async function refreshElectorates() {
+  const nums = [...state.ref.electorates.keys()];
+  await mapLimit(nums, 8, async (e) => {
+    const path = `e${String(e).padStart(2, "0")}/e${String(e).padStart(2, "0")}.xml`;
+    const res = await getFeed(path);
+    if (res.status === 200) state.seats.set(e, parseElectorate(res.text));
+    if (res.status === 404) state.seats.delete(e); // spec: may not exist until first result
+  });
+}
+
+async function poll() {
+  state.tick++;
+  try {
+    const res = await getFeed("election.xml");
+    let changed = false;
+    if (res.status === 200) {
+      const next = parseElection(res.text);
+      changed = !state.election || next.updated !== state.election.updated;
+      state.election = next;
+    }
+    if (changed || state.tick % FULL_REFRESH_EVERY === 1) await refreshElectorates();
+    state.lastSuccess = Date.now();
+    state.lastError = null;
+  } catch (err) {
+    // Keep showing the last good data; the health pill turns red once it's stale.
+    state.lastError = String(err.message ?? err);
+    console.warn("poll failed", err);
+  }
+  renderAll();
+}
+
+async function start() {
+  if (REPLAY) Replay.init();
+  for (let attempt = 0; !state.ref; attempt++) {
+    try {
+      await loadReference();
+    } catch (err) {
+      state.lastError = String(err.message ?? err);
+      renderHealth();
+      await new Promise((r) => setTimeout(r, Math.min(30000, 2000 * 2 ** attempt)));
+    }
+  }
+  if (REPLAY) Replay.build(state.ref);
+  await poll();
+  setInterval(poll, POLL_MS);
+  setInterval(renderHealth, 1000);
+}
+
+// ====================================================================
+// UI events
+// ====================================================================
+
+document.querySelector(".filters").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-filter]");
+  if (!b) return;
+  state.filter = b.dataset.filter;
+  for (const x of document.querySelectorAll(".filters button")) x.setAttribute("aria-pressed", String(x === b));
+  renderWatch();
+});
+document.getElementById("watch").addEventListener("click", (ev) => {
+  const card = ev.target.closest(".seat, .nb-dot");
+  if (card) openDetail(Number(card.dataset.e));
+});
+// Remember whether "Other seats" is open; renderWatch rebuilds it on every update.
+document.getElementById("watch").addEventListener("toggle", (ev) => {
+  if (ev.target.matches("details.others") && state.filter === "all") state.othersOpen = ev.target.open;
+}, true);
+const body = document.getElementById("el-body");
+body.addEventListener("click", (ev) => { const tr = ev.target.closest("tr[data-e]"); if (tr) openDetail(Number(tr.dataset.e)); });
+body.addEventListener("keydown", (ev) => {
+  const tr = ev.target.closest("tr[data-e]");
+  if (tr && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openDetail(Number(tr.dataset.e)); }
+});
+document.getElementById("el-search").addEventListener("input", () => state.ref && renderList());
+document.getElementById("el-sort").addEventListener("change", () => state.ref && renderList());
+document.getElementById("drawer-bg").addEventListener("click", closeDetail);
+document.getElementById("drawer").addEventListener("click", (ev) => { if (ev.target.closest("[data-close]")) closeDetail(); });
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && state.selected !== null) closeDetail(); });
+
+// Tooltip for anything with data-tip.
+const tip = document.getElementById("tip");
+document.addEventListener("mousemove", (ev) => {
+  const t = ev.target.closest("[data-tip]");
+  if (!t) { tip.style.display = "none"; return; }
+  tip.textContent = t.dataset.tip;
+  tip.style.display = "block";
+  const x = Math.min(ev.clientX + 14, innerWidth - tip.offsetWidth - 8);
+  const y = Math.min(ev.clientY + 14, innerHeight - tip.offsetHeight - 8);
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+});
+
+// ====================================================================
+// Replay: a fake election night in the feed's own XML format, so the same
+// parsing and rendering code is exercised. Reference files are real.
+// ?replay[&minutes=5][&seed=7]
+// ====================================================================
+
+const Replay = (() => {
+  const MINUTES = Number(PARAMS.get("minutes")) || 5;
+  const SEED = Number(PARAMS.get("seed")) || 7;
+  const NIGHT_HOURS = 4.5; // 7pm to 11:30pm
+  let t = 0, playing = true, lastWall = performance.now();
+  let model = null;
+  const served = new Map(); // path -> { text, lm } last served, to answer If-Modified-Since
+
+  const rng = (seed) => () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let r = Math.imul(seed ^ (seed >>> 15), 1 | seed); r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r; return ((r ^ (r >>> 14)) >>> 0) / 4294967296; };
+  const gauss = (rand) => Math.sqrt(-2 * Math.log(rand() || 1e-9)) * Math.cos(2 * Math.PI * rand());
+  const normalise = (m) => { const s = [...m.values()].reduce((a, b) => a + b, 0); for (const [k, v] of m) m.set(k, v / s); return m; };
+
+  // Final 1News-Verian poll, 29 Oct to 2 Nov.
+  const BASE = { NAT: 29.5, LAB: 28.8, GP: 16.4, ACT: 10, NZF: 8.4, OPP: 6.2, TPMAO: 0.6, TTTP: 0.3 };
+  const MAORI_TILT = { NAT: 0.35, ACT: 0.3, NZF: 0.8, LAB: 1.7, GP: 1.4, TPMAO: 8, TTTP: 4, OPP: 0.8 };
+  const CAND_PULL = { NAT: 1.7, LAB: 1.6, GP: 0.9, ACT: 0.8, NZF: 0.6, OPP: 0.6 };
+
+  function build(ref) {
+    const abbrevOf = (p) => ref.parties.get(p)?.abbrev;
+    const registered = [...ref.parties.values()].filter((p) => p.registered).map((p) => p.p);
+    const seats = [];
+    for (const e of ref.electorates.keys()) {
+      const rand = rng(SEED * 1000 + e);
+      const maori = e >= 65;
+      // Party vote shares for this electorate, advance and election day.
+      const pShare = new Map();
+      for (const p of registered) {
+        const a = abbrevOf(p);
+        const base = (BASE[a] ?? 0.25) * (maori ? MAORI_TILT[a] ?? 1 : 1);
+        pShare.set(p, base * Math.exp(gauss(rand) * 0.22));
+      }
+      normalise(pShare);
+      const pShareDay = normalise(new Map([...pShare].map(([p, v]) => [p, v * Math.exp(gauss(rand) * 0.06)])));
+
+      // Candidate shares: party strength times a candidate pull, plus noise.
+      const cands = ref.byElectorate.get(e) ?? [];
+      const cShare = new Map();
+      for (const c of cands) {
+        const a = abbrevOf(c.p);
+        let w;
+        if (a === "TPMAO" && maori) w = 0.32;
+        else if (a === "TTTP" && maori) w = 0.14;
+        else if (!a) w = 0.02;
+        else w = (pShare.get(c.p) ?? 0.003) * (CAND_PULL[a] ?? 0.5);
+        cShare.set(c.c, w * Math.exp(gauss(rand) * 0.25));
+      }
+      normalise(cShare);
+      // Watch seats: pull the top two close together so the rehearsal has drama.
+      if (WATCH.has(e) && cShare.size > 1) {
+        const [a, b] = [...cShare].sort((x, y) => y[1] - x[1]);
+        const mid = (a[1] + b[1]) / 2, gap = (rand() - 0.5) * 0.06;
+        cShare.set(a[0], mid + gap); cShare.set(b[0], mid - gap);
+      }
+      // Election-day votes lean slightly differently, so some leads flip late.
+      const cShareDay = normalise(new Map([...cShare].map(([c, v]) => [c, Math.max(0.001, v + gauss(rand) * 0.02)])));
+
+      const total = Math.round(maori ? 22000 + rand() * 8000 : 38000 + rand() * 10000);
+      const places = Math.round(maori ? 120 + rand() * 150 : 30 + rand() * 40);
+      seats.push({
+        e, total, places, pShare, pShareDay, cShare, cShareDay,
+        advShare: 0.55 + rand() * 0.15,                // advance votes, counted during the day
+        tAdv: 0.02 + rand() * 0.1,                     // when advance results land
+        tStart: 0.08 + rand() * 0.25,                  // election-day count starts
+        tEnd: 0.55 + rand() * 0.42,                    // ...and finishes
+      });
+    }
+    model = { seats, registered, abbrevOf };
+  }
+
+  // Votes counted for one electorate at time t.
+  function countAt(s, t) {
+    const adv = t >= s.tAdv ? 1 : 0;
+    const day = t <= s.tStart ? 0 : Math.min(1, (t - s.tStart) / (s.tEnd - s.tStart));
+    const advPlaces = Math.round(s.places * 0.15);
+    const dayPlaces = Math.floor((s.places - advPlaces) * day);
+    const dayFrac = dayPlaces / (s.places - advPlaces);
+    const advVotes = Math.round(s.total * s.advShare * adv);
+    const dayVotes = Math.round(s.total * (1 - s.advShare) * dayFrac);
+    const split = (a, b) => new Map([...a.keys()].map((k) => [k, Math.round(advVotes * a.get(k) + dayVotes * b.get(k))]));
+    return {
+      placesCounted: adv * advPlaces + dayPlaces,
+      votes: advVotes + dayVotes,
+      party: split(s.pShare, s.pShareDay),
+      cand: split(s.cShare, s.cShareDay),
+    };
+  }
+
+  function stamp(t) {
+    const d = new Date(Date.UTC(2026, 10, 7, 19, 0, 0) + t * NIGHT_HOURS * 3600e3);
+    return d.toISOString().slice(0, 19);
+  }
+  const q = () => Math.floor(t * 400) / 400; // the "server" publishes in steps
+
+  function electorateXml(s, tq) {
+    const c = countAt(s, tq);
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<electorate e_no="${s.e}" final="${tq >= s.tEnd}" updated="${stamp(tq)}">
+  <statistics>
+    <total_voting_places>${s.places}</total_voting_places>
+    <total_voting_places_counted>${c.placesCounted}</total_voting_places_counted>
+    <percent_voting_places_counted>${((c.placesCounted / s.places) * 100).toFixed(1)}</percent_voting_places_counted>
+    <total_votes_cast>${c.votes}</total_votes_cast>
+    <percent_votes_cast>0.0</percent_votes_cast>
+    <total_party_informals>${Math.round(c.votes * 0.004)}</total_party_informals>
+    <total_candidate_informals>${Math.round(c.votes * 0.011)}</total_candidate_informals>
+    <total_registered_parties>${model.registered.length}</total_registered_parties>
+    <total_candidates>${s.cShare.size}</total_candidates>
+  </statistics>
+  <partyvotes>${[...c.party].map(([p, v]) => `<party p_no="${p}"><votes>${v}</votes></party>`).join("")}</partyvotes>
+  <candidatevotes>${[...c.cand].map(([k, v]) => `<candidate c_no="${k}"><votes>${v}</votes></candidate>`).join("")}</candidatevotes>
+</electorate>`;
+  }
+
+
+  function electionXml(tq) {
+    const partyVotes = new Map(model.registered.map((p) => [p, 0]));
+    const wins = new Map();
+    let places = 0, counted = 0, votes = 0;
+    for (const s of model.seats) {
+      const c = countAt(s, tq);
+      places += s.places; counted += c.placesCounted; votes += c.votes;
+      for (const [p, v] of c.party) partyVotes.set(p, (partyVotes.get(p) ?? 0) + v);
+      if (c.votes) {
+        const [leadC] = [...c.cand].sort((a, b) => b[1] - a[1])[0] ?? [];
+        const p = state.ref.candidates.get(leadC)?.p;
+        if (p) wins.set(p, (wins.get(p) ?? 0) + 1);
+      }
+    }
+    const alloc = votes ? allocateSeats(partyVotes, wins) : new Map();
+    const totalPv = [...partyVotes.values()].reduce((a, b) => a + b, 0) || 1;
+    const partyXml = model.registered.map((p) => {
+      const w = wins.get(p) ?? 0;
+      const tot = Math.max(alloc.get(p) ?? 0, w);
+      return `<party p_no="${p}"><votes>${partyVotes.get(p)}</votes><percent_votes>${((partyVotes.get(p) / totalPv) * 100).toFixed(1)}</percent_votes><party_seats>${tot - w}</party_seats><candidate_seats>${w}</candidate_seats><total_seats>${tot}</total_seats></party>`;
+    }).join("");
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<election updated="${stamp(tq)}">
+  <statistics>
+    <total_voting_places_counted>${counted}</total_voting_places_counted>
+    <percent_voting_places_counted>${((counted / places) * 100).toFixed(1)}</percent_voting_places_counted>
+    <total_votes_cast>${votes}</total_votes_cast>
+    <percent_votes_cast>${((votes / ELECTORS) * 100).toFixed(1)}</percent_votes_cast>
+    <total_electorates_final>0</total_electorates_final>
+    <percent_electorates_final>0.00</percent_electorates_final>
+    <total_minimal_votes>0</total_minimal_votes>
+    <total_special_votes>0</total_special_votes>
+    <total_registered_parties>${model.registered.length}</total_registered_parties>
+  </statistics>
+  <partystatus>${partyXml}</partystatus>
+</election>`;
+  }
+
+  function handles(path) { return path === "election.xml" || /^e\d{2}\/e\d{2}\.xml$/.test(path); }
+
+  // Mimics the relay: 304 when the file hasn't changed since If-Modified-Since.
+  async function get(path, ims) {
+    if (!model) throw new FeedError("Replay not ready");
+    const tq = q();
+    const text = path === "election.xml" ? electionXml(tq) : electorateXml(model.seats.find((s) => s.e === Number(path.slice(1, 3))), tq);
+    const prev = served.get(path);
+    if (prev && prev.text === text && ims === prev.lm) return { status: 304 };
+    const lm = prev && prev.text === text ? prev.lm : stamp(tq);
+    served.set(path, { text, lm });
+    lastModified.set(path, lm);
+    return { status: 200, text };
+  }
+
+  function init() {
+    document.getElementById("rehearsal").hidden = false;
+    const scrub = document.getElementById("rh-scrub");
+    const play = document.getElementById("rh-play");
+    play.onclick = () => { playing = !playing; lastWall = performance.now(); play.textContent = playing ? "Pause" : "Play"; };
+    document.getElementById("rh-restart").onclick = () => { t = 0; lastWall = performance.now(); };
+    scrub.oninput = () => { t = scrub.value / 1000; };
+    setInterval(() => {
+      const now = performance.now();
+      if (playing) t = Math.min(1, t + (now - lastWall) / (MINUTES * 60e3));
+      lastWall = now;
+      scrub.value = Math.round(t * 1000);
+      document.getElementById("rh-clock").textContent = `Fake clock ${feedTime(stamp(t))}`;
+    }, 250);
+  }
+
+  return { init, build, handles, get };
+})();
+
+start();
+</script>
+</body>
+</html>
