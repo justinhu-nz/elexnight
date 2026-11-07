@@ -173,9 +173,18 @@ details.others summary { cursor: pointer; font-size: 13px; font-weight: 600; col
 details.others .cols { margin-top: 4px; }
 
 /* ---------- surprise results ---------- */
-.surprise-method { margin: 0 0 12px; max-width: 95ch; }
-.surprise-seat { display: block; }
-.surprise-note { display: block; margin-top: 3px; }
+.surprise-card { padding: 10px 14px; }
+.surprise-card .card-head { margin-bottom: 4px; gap: 8px; }
+.surprise-help { border: 1px solid var(--border); border-radius: 50%; background: none; color: var(--text-3); width: 18px; height: 18px; padding: 0; font-size: 11px; cursor: help; }
+.surprise-card .empty { padding: 4px 0; text-align: left; font-size: 12px; }
+.surprise-card .table-wrap { max-height: 220px; overflow: auto; }
+.surprise-card th, .surprise-card td { padding: 4px 8px; font-size: 12px; }
+.surprise-card th { position: sticky; top: 0; background: var(--surface); }
+.surprise-card th:first-child, .surprise-card td:first-child { padding-left: 0; }
+.surprise-card tbody tr:last-child td { border-bottom: 0; }
+.surprise-card .chip { min-width: 30px; padding: 0 4px; font-size: 10px; }
+.surprise-card .tag { font-size: 10px; padding: 0 4px; }
+.surprise-arrow { color: var(--text-3); margin: 0 5px; }
 
 /* ---------- every electorate ---------- */
 .list-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
@@ -255,12 +264,12 @@ td .mini span { display: block; height: 100%; background: var(--text-3); }
     <div id="watch"></div>
   </section>
 
-  <section class="card wide" aria-labelledby="surprise-title">
+  <section class="card wide surprise-card" aria-labelledby="surprise-title">
     <div class="card-head">
       <h2 id="surprise-title">Surprise results</h2>
       <span class="sub" id="surprise-sub"></span>
+      <button type="button" class="surprise-help" aria-label="How surprise results are selected" title="A different party leads against at least 80% agreement among five or more spreadsheet picks; blanks excluded. Pick agreement is not a win probability or seat safety. Strongest consensus first. Preliminary leads only.">?</button>
     </div>
-    <p class="sub surprise-method">A different party leads in a seat where at least 80% of the spreadsheet’s picks agreed (minimum five picks; blanks ignored). Agreement is not a win probability or a measure of seat safety. Strongest consensus first. Preliminary leads only.</p>
     <div id="surprises"><div class="empty">Waiting for electorate results…</div></div>
   </section>
 
@@ -1127,22 +1136,21 @@ function surpriseRaces() {
 function renderSurprises() {
   const rows = surpriseRaces();
   const mapped = [...state.ref.electorates.values()].filter((name) => surpriseBaseline.has(seatKey(name))).length;
-  document.getElementById("surprise-sub").textContent = `${rows.length} against consensus · ${mapped} of ${state.ref.electorates.size} seats matched`;
+  document.getElementById("surprise-sub").textContent = `${rows.length} against consensus${mapped < state.ref.electorates.size ? ` · ${state.ref.electorates.size - mapped} unmatched` : ""}`;
   document.getElementById("surprises").innerHTML = rows.length ? `<div class="table-wrap"><table>
-    <thead><tr><th>Seat</th><th>Expected</th><th>Now leading</th><th class="num">Lead (votes)</th><th>Counted</th><th>Context</th></tr></thead>
+    <thead><tr><th>Seat</th><th>Expected → leading</th><th>Picks</th><th class="num">Lead</th><th>Counted</th></tr></thead>
     <tbody>${rows.map(({ rc, baseline: b }) => {
       const expectedParty = [...state.ref.parties.values()].find((p) => p.abbrev === b.expected);
       const early = rc.pctPlaces < 10 || rc.total < 500;
       const context = early ? "Early count" : flags(rc).close ? "Close lead" : "Leading against consensus";
       return `<tr tabindex="0" data-e="${rc.e}">
-        <td><b class="surprise-seat">${esc(rc.name)}</b><span class="sub surprise-note">${b.agreement === b.total ? "Unanimous pick" : "Strong consensus"}</span></td>
-        <td>${expectedParty ? chip(expectedParty.p) : esc(PARTY_LABEL[b.expected] ?? b.expected)} <span class="sub">${b.agreement}/${b.total} picks</span></td>
-        <td>${chip(rc.lead.p)}<span class="who">${esc(rc.lead.name)}</span></td>
-        <td class="num">${rc.margin === null ? "–" : fmt(rc.margin)}</td>
+        <td title="${b.agreement === b.total ? "Unanimous pick" : "Strong consensus"}"><b>${esc(rc.name)}</b>${early ? ' <span class="tag close">Early</span>' : ""}</td>
+        <td title="${esc(`${rc.lead.name} leading · ${context}`)}">${expectedParty ? chip(expectedParty.p) : esc(PARTY_LABEL[b.expected] ?? b.expected)}<span class="surprise-arrow" aria-hidden="true">→</span>${chip(rc.lead.p)}</td>
+        <td class="sub" title="${b.agreement}/${b.total} picks">${b.agreement}/${b.total}</td>
+        <td class="num" title="${context}">${rc.margin === null ? "–" : fmt(rc.margin)}</td>
         <td>${pct(rc.pctPlaces, 0)}</td>
-        <td><span class="tag close">${context}</span></td>
       </tr>`;
-    }).join("")}</tbody></table></div>` : `<div class="empty">${[...state.ref.electorates.keys()].some((e) => race(e).started) ? "No leads against a strong consensus right now." : "Waiting for electorate results. Surprise leads will appear here automatically."}</div>`;
+    }).join("")}</tbody></table></div>` : `<div class="empty">${[...state.ref.electorates.keys()].some((e) => race(e).started) ? "No surprise leads right now." : "Waiting for electorate results…"}</div>`;
 }
 
 function renderAll() {
