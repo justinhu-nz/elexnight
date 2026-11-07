@@ -108,6 +108,14 @@ main > .wide { grid-column: 1 / -1; }
 .pv-axis { position: relative; height: 14px; }
 .threshold { position: absolute; top: -4px; bottom: -4px; border-left: 1.5px dashed var(--text-3); pointer-events: none; }
 .threshold-label { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; line-height: 14px; color: var(--text-3); white-space: nowrap; }
+.blocs { display: grid; grid-template-columns: minmax(0, 9.5em) 1fr auto; gap: 6px 8px; align-items: center; margin-top: 10px; }
+.bl-name { font-size: 12px; font-weight: 600; line-height: 1.2; }
+.bl-name small { display: block; font-weight: 400; color: var(--text-3); font-size: 11px; }
+.bl-track { position: relative; height: 16px; background: var(--grid); border-radius: 4px; }
+.bl-track .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--pc); border-radius: 4px; }
+.bl-maj { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--text); pointer-events: none; }
+.blocs .val { text-align: right; white-space: nowrap; font-size: 13px; }
+.blocs .val small { color: var(--text-3); }
 .pv-foot { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--grid); color: var(--text-2); font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
 
 /* ---------- chips ---------- */
@@ -143,6 +151,11 @@ main > .wide { grid-column: 1 / -1; }
 }
 .mrow.labels { cursor: default; font-size: 11px; color: var(--text-3); padding-top: 2px; padding-bottom: 2px; }
 .mrow.labels:hover { background: none; }
+.mrow.labels button { border: 0; padding: 4px 0; background: none; color: inherit; font: inherit; text-align: inherit; cursor: pointer; white-space: nowrap; }
+.mrow.labels button:hover, .mrow.labels button:focus-visible { color: var(--text); text-decoration: underline; }
+.mrow.labels button:focus-visible { outline: 2px solid var(--text-3); outline-offset: 1px; }
+.mrow.labels button.active { color: var(--text); font-weight: 700; }
+.sort-arrow { font-size: 9px; margin-left: 2px; }
 .mrow .mname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .mrow .n { text-align: right; white-space: nowrap; }
 .mrow .dim { color: var(--text-3); font-size: 12px; }
@@ -158,6 +171,11 @@ main > .wide { grid-column: 1 / -1; }
 details.others { margin-top: 14px; }
 details.others summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-2); padding: 4px 2px; }
 details.others .cols { margin-top: 4px; }
+
+/* ---------- surprise results ---------- */
+.surprise-method { margin: 0 0 12px; max-width: 95ch; }
+.surprise-seat { display: block; }
+.surprise-note { display: block; margin-top: 3px; }
 
 /* ---------- every electorate ---------- */
 .list-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
@@ -218,7 +236,7 @@ td .mini span { display: block; height: 100%; background: var(--text-3); }
   <label>Night progress <input id="rh-scrub" type="range" min="0" max="1000" value="0"></label>
   <span id="rh-clock"></span>
 </div>
-<div class="banner">Preliminary results only. Special votes (up to 700,000) are counted later; official results are declared Friday 27 November.</div>
+<div class="banner">Preliminary results only. Special votes (about 600,000 in 2023, likely fewer this year under the new enrolment rules) are counted later; official results are declared Friday 27 November.</div>
 
 <main>
   <section class="card" aria-labelledby="pv-title">
@@ -235,6 +253,15 @@ td .mini span { display: block; height: 100%; background: var(--text-3); }
       <span class="sub">Watch seats from National's side</span>
     </div>
     <div id="watch"></div>
+  </section>
+
+  <section class="card wide" aria-labelledby="surprise-title">
+    <div class="card-head">
+      <h2 id="surprise-title">Surprise results</h2>
+      <span class="sub" id="surprise-sub"></span>
+    </div>
+    <p class="sub surprise-method">A different party leads in a seat where at least 80% of the spreadsheet’s picks agreed (minimum five picks; blanks ignored). Agreement is not a win probability or a measure of seat safety. Strongest consensus first. Preliminary leads only.</p>
+    <div id="surprises"><div class="empty">Waiting for electorate results…</div></div>
   </section>
 
   <section class="card wide" aria-labelledby="el-title">
@@ -277,10 +304,16 @@ const RELAYS = [
 ];
 const PARAMS = new URLSearchParams(location.search);
 const REPLAY = PARAMS.has("replay");
-const POLL_MS = REPLAY ? 2000 : 15000;
+const POLL_MS = REPLAY ? 2000 : 40000;
+const FETCH_MS = 20000; // per relay request: the relay itself can take 3 x 5s trying the feed servers
 const FULL_REFRESH_EVERY = 4; // also re-check every eNN this often, even if election.xml is unchanged
-const STALE_MS = REPLAY ? 10000 : 60000;
-const CLOSE_MARGIN = 500;
+const STALE_MS = REPLAY ? 10000 : 100000; // more than two missed 40s polls
+// A lead is close (▲) when the votes still to count could overturn it: under
+// CLOSE_SHARE of them, specials included, and never under CLOSE_MIN votes.
+// With every place in, only specials remain, so this comes to about 500-700 votes.
+const CLOSE_SHARE = 0.10;
+const CLOSE_MIN = 200;
+const SPECIALS_RATE = 0.18; // expected specials per ordinary vote: 2023's ~26%, x0.7 for the 2025 enrolment rules
 const ELECTORS = 3633546; // statistics.xml, used by replay only
 
 // Display labels; feed abbreviations are the keys.
@@ -332,6 +365,90 @@ const WATCH_GROUPS = [
 const WATCH = new Map();
 for (const g of WATCH_GROUPS) for (const [e, held, margin, note] of g.seats) WATCH.set(e, { held, margin, note, side: g.side });
 
+// Prediction tallies from the supplied 71-seat spreadsheet; blanks excluded.
+// Agreement among picks is not a win probability or historical seat safety.
+const SURPRISE_PICKS = [
+  ["Hauraki-Waikato", {"TPMAO": 6}],
+  ["Ikaroa-Rāwhiti", {"LAB": 6}],
+  ["Tāmaki Makaurau", {"TPMAO": 6}],
+  ["Te Tai Hauāuru", {"TPMAO": 6}],
+  ["Te Tai Tokerau", {"TPMAO": 1, "GP": 3, "TTTP": 1, "LAB": 1}],
+  ["Te Tai Tonga", {"LAB": 6}],
+  ["Waiariki", {"TPMAO": 6}],
+  ["Auckland Central", {"GP": 7}],
+  ["Banks Peninsula", {"LAB": 6}],
+  ["Botany", {"NAT": 7}],
+  ["Christchurch Central", {"GP": 3, "LAB": 4}],
+  ["Christchurch East", {"LAB": 6, "NAT": 1}],
+  ["Coromandel", {"NAT": 7}],
+  ["Dunedin", {"LAB": 6, "GP": 1}],
+  ["East Cape", {"NAT": 6}],
+  ["East Coast Bays", {"NAT": 6}],
+  ["Epsom", {"ACT": 4, "NAT": 2}],
+  ["Glendene", {"LAB": 6}],
+  ["Hamilton East", {"LAB": 2, "NAT": 4}],
+  ["Hamilton West", {"NAT": 5}],
+  ["Henderson", {"LAB": 6}],
+  ["Hutt South", {"LAB": 5, "NAT": 2}],
+  ["Ilam", {"LAB": 1, "NAT": 6}],
+  ["Invercargill", {"NAT": 7}],
+  ["Kaikōura", {"NAT": 6}],
+  ["Kaipara ki Mahurangi", {"NAT": 6}],
+  ["Kapiti", {"LAB": 4, "NAT": 2}],
+  ["Kenepuru", {"LAB": 7}],
+  ["Māngere", {"LAB": 7}],
+  ["Manurewa", {"LAB": 7}],
+  ["Maungakiekie", {"LAB": 4, "NAT": 2}],
+  ["Mt Albert", {"LAB": 7}],
+  ["Mt Maunganui", {"NAT": 6}],
+  ["Mt Roskill", {"LAB": 7}],
+  ["Napier", {"NAT": 6}],
+  ["Nelson", {"LAB": 7}],
+  ["New Plymouth", {"NAT": 5}],
+  ["North Shore", {"NAT": 6}],
+  ["Northcote", {"NAT": 6}],
+  ["Northland", {"NAT": 7}],
+  ["Ōtāhuhu", {"LAB": 6}],
+  ["Pakuranga", {"NAT": 6}],
+  ["Palmerston North", {"LAB": 7}],
+  ["Papakura", {"NAT": 6}],
+  ["Port Waikato", {"NAT": 5}],
+  ["Rangitata", {"NAT": 6}],
+  ["Rangitīkei", {"NAT": 6}],
+  ["Remutaka", {"LAB": 7}],
+  ["Rotorua", {"NAT": 5}],
+  ["Selwyn", {"NAT": 7}],
+  ["Southland", {"NAT": 7}],
+  ["Taieri", {"LAB": 6, "NAT": 1}],
+  ["Takanini", {"NAT": 5, "LAB": 1}],
+  ["Tāmaki", {"ACT": 3, "NAT": 4}],
+  ["Taranaki-King Country", {"NAT": 6}],
+  ["Taupō", {"NAT": 7}],
+  ["Tauranga", {"NAT": 5, "TPMAO": 1}],
+  ["Tukituki", {"NAT": 5, "NZF": 2}],
+  ["Upper Harbour", {"NAT": 6}],
+  ["Waikato", {"NAT": 5}],
+  ["Waimakariri", {"NAT": 6}],
+  ["Wairarapa", {"LAB": 4, "NAT": 2}],
+  ["Waitākere", {"LAB": 6}],
+  ["Waitaki", {"NAT": 6}],
+  ["Wellington Bays", {"LAB": 5, "GP": 2}],
+  ["Wellington North", {"GP": 4, "LAB": 3}],
+  ["West Coast-Tasman", {"NAT": 7}],
+  ["Whanganui", {"NAT": 3, "LAB": 3}],
+  ["Whangaparāoa", {"NAT": 6}],
+  ["Whangārei", {"NAT": 5, "LAB": 1}],
+  ["Wigram", {"LAB": 6, "NAT": 1}]
+];
+const SURPRISE_CONSENSUS = 0.8;
+const SURPRISE_MIN_PICKS = 5;
+const seatKey = (name) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const surpriseBaseline = new Map(SURPRISE_PICKS.map(([name, counts]) => {
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  const [expected, agreement] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return [seatKey(name), { expected, agreement, total, consensus: agreement / total }];
+}));
+
 // ====================================================================
 // State
 // ====================================================================
@@ -344,7 +461,9 @@ const state = {
   lastError: null,
   relay: null,        // which relay answered last
   tick: 0,
-  othersOpen: false,
+  electoratesPending: true, // keep retrying an incomplete refresh, even on national 304s
+  othersOpen: true,
+  watchSort: {}, // independent order for defending, chasing and other seats
   selected: null,
 };
 const lastModified = new Map(); // path -> Last-Modified, for If-Modified-Since
@@ -363,7 +482,8 @@ async function getFeed(path, { conditional = true } = {}) {
   let lastErr;
   for (const base of RELAYS) {
     try {
-      const res = await fetch(base + path, { headers, cache: "no-store" });
+      // The deadline covers the body too, so a stalled relay moves on to the backup.
+      const res = await fetch(base + path, { headers, cache: "no-store", signal: globalThis.AbortSignal?.timeout?.(FETCH_MS) }); // older browsers: no deadline, but still fetch
       if (res.status === 304 || res.status === 404) { state.relay = base; return { status: res.status }; }
       if (!res.ok) throw new FeedError(`${res.status} from relay`);
       const text = await res.text();
@@ -381,10 +501,15 @@ async function getFeed(path, { conditional = true } = {}) {
 async function mapLimit(items, limit, fn) {
   const out = new Array(items.length);
   let i = 0;
+  let firstError;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) { const k = i++; out[k] = await fn(items[k]); }
+    while (i < items.length) {
+      const k = i++;
+      try { out[k] = await fn(items[k]); } catch (err) { firstError ??= err; }
+    }
   });
   await Promise.all(workers);
+  if (firstError) throw firstError;
   return out;
 }
 
@@ -503,6 +628,7 @@ function race(e) {
     e,
     name: state.ref.electorates.get(e) ?? `Electorate ${e}`,
     started,
+    tied: started && !!second && lead.votes === second.votes,
     cands,
     total,
     lead: started ? lead : null,
@@ -517,8 +643,8 @@ function race(e) {
 
 function flags(rc) {
   const w = WATCH.get(rc.e);
-  const close = rc.started && rc.margin !== null && rc.margin < CLOSE_MARGIN;
-  const change = rc.started && w && party(rc.lead.p).abbrev !== w.held;
+  const close = rc.started && rc.margin !== null && rc.margin < closeMargin(rc);
+  const change = rc.started && !rc.tied && w && party(rc.lead.p).abbrev !== w.held;
   return { close, change };
 }
 
@@ -566,6 +692,16 @@ function feedTime(s) {
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")}${h < 12 ? "am" : "pm"}${day}`;
 }
 const surname = (name) => name.split(" ").slice(-1)[0];
+
+// Votes still to count in an electorate, roughly: ordinary votes in proportion
+// to the places not yet in, plus expected specials.
+function outstanding(rc) {
+  const done = Math.max(0.01, Math.min(1, (rc.pctPlaces ?? 0) / 100));
+  const ordinary = rc.total / done;
+  return ordinary - rc.total + ordinary * SPECIALS_RATE;
+}
+const closeMargin = (rc) => Math.max(CLOSE_MIN, Math.round(CLOSE_SHARE * outstanding(rc)));
+const CLOSE_TEXT = `the lead is under ${CLOSE_SHARE * 100}% of the votes still to count, specials included`;
 
 // ====================================================================
 // Header status
@@ -645,11 +781,45 @@ function renderParliamentLine(el) {
   if (!total) return "";
   const majority = Math.floor(total / 2) + 1;
   const overhang = total - 120;
+  const seatsOf = (abbrevs) => el.parties.filter((r) => abbrevs.includes(party(r.p).abbrev)).reduce((t, r) => t + r.seats, 0);
+  const at = (n) => `${(n / total) * 100}%`;
+  const blocs = BLOCS.map((b) => {
+    const n = seatsOf(b.parties);
+    const names = b.parties.map((a) => PARTY_LABEL[a] ?? a).join(" + ");
+    return `<span class="bl-name">${esc(b.name)}<small>${esc(names)}</small></span>
+      <div class="bl-track ${b.cls}" data-tip="${esc(`${b.name} (${names}): ${n} of ${total} seats on the count so far. Majority ${majority}.`)}">
+        <div class="fill" style="width:${at(n)}"></div><div class="bl-maj" style="left:${at(majority)}"></div>
+      </div>
+      <span class="val"><b>${n}</b>${n >= majority ? "" : ` <small>${majority - n} short</small>`}</span>`;
+  }).join("");
   return `<div class="pv-foot">
     <span>Parliament: <b>${total}</b> seats${overhang > 0 ? ` (overhang +${overhang})` : ""}</span>
     <span>Majority: <b>${majority}</b></span>
-  </div>`;
+  </div>
+  <div class="blocs" aria-label="Seats by bloc on the count so far">${blocs}</div>
+  <p class="sub" style="margin:6px 0 0">Seats if the preliminary count stood, from the Commission's allocation. The majority line moves with overhang.</p>`;
 }
+
+// Overhang across Parliament: the Commission's seats over 120, and the parties
+// whose electorate leads exceed their Sainte-Laguë share.
+function overhangNow() {
+  const el = state.election;
+  if (!el || !el.parties.some((r) => r.votes > 0)) return null;
+  const wins = new Map(el.parties.filter((r) => r.electorateSeats > 0).map((r) => [r.p, r.electorateSeats]));
+  const alloc = allocateSeats(new Map(el.parties.map((r) => [r.p, r.votes])), wins);
+  const parties = el.parties
+    .map((r) => ({ label: party(r.p).label, n: Math.max(0, r.electorateSeats - (alloc.get(r.p) ?? 0)) }))
+    .filter((x) => x.n > 0);
+  const seats = el.parties.reduce((t, r) => t + r.seats, 0);
+  return { total: Math.max(0, seats - 120), parties };
+}
+
+// The parties in the current government, and the main opposition parties.
+// Seat counts only, from the Commission's allocation; never a call.
+const BLOCS = [
+  { name: "Current government", parties: ["NAT", "ACT", "NZF"], cls: "p-NAT" },
+  { name: "Opposition", parties: ["LAB", "GP", "TPMAO"], cls: "p-LAB" },
+];
 
 // ====================================================================
 // 5. Is National winning?
@@ -665,11 +835,12 @@ function natStats() {
   const wins = new Map();
   let natWins = 0, closeLead = 0, closeTrail = 0;
   for (const r of started) {
-    wins.set(r.lead.p, (wins.get(r.lead.p) ?? 0) + 1);
+    if (!r.tied) wins.set(r.lead.p, (wins.get(r.lead.p) ?? 0) + 1);
     const nv = natView(r);
     if (!nv) continue;
-    if (nv.ahead) { natWins++; if (nv.diff < CLOSE_MARGIN) closeLead++; }
-    else if (-nv.diff < CLOSE_MARGIN && r.second === nv.nat) closeTrail++;
+    const cm = closeMargin(r);
+    if (nv.ahead) { natWins++; if (nv.diff < cm) closeLead++; }
+    else if (nv.tied || (-nv.diff < cm && r.second === nv.nat)) closeTrail++;
   }
   const el = state.election;
   const natRow = el?.parties.find((r) => r.p === natP);
@@ -681,12 +852,11 @@ function natStats() {
 function renderWatch() {
   const s = natStats();
   const ready = s.started > 0 && s.earned !== null;
-  const over = (w) => Math.max(0, w - s.earned);
   const range = (a, b, f = String) => (a === b ? "" : `${f(a)} to ${f(b)}`);
 
-  const overhang = ready ? over(s.natWins) : null;
+  const oh = overhangNow();
   const board = `<div class="board">
-    <div class="stat2" data-tip="Electorates where National's candidate is ahead, of all 71. The range assumes every seat within ${CLOSE_MARGIN} votes could go either way.">
+    <div class="stat2" data-tip="Electorates where National's candidate is ahead, of all 71. The range treats every close seat (${CLOSE_TEXT}) as able to go either way.">
       <div class="k">Electorates led</div>
       <div class="v">${ready ? s.natWins : "–"}<small> / ${state.ref.electorates.size}</small></div>
       <div class="r">${ready ? (range(s.lo, s.hi) ? `close-seat range ${range(s.lo, s.hi)}` : "no close seats") : `${s.started} reporting`}</div>
@@ -696,10 +866,10 @@ function renderWatch() {
       <div class="v">${ready ? pct(s.pct) : "–"}</div>
       <div class="r">${ready ? `earns ≈${s.earned} seats` : "awaiting results"}</div>
     </div>
-    <div class="stat2" data-tip="Electorates led beyond what the party vote earns. Overhang means National gets no list MPs and Parliament grows.">
+    <div class="stat2" data-tip="Seats over 120 in the Commission's allocation so far, and which parties lead more electorates than their party vote earns. Overhang raises the majority needed. National leading ${ready ? s.natWins : "–"} electorates against ≈${ready ? s.earned : "–"} seats earned means ${ready && s.natWins > s.earned ? "National would overhang too" : "National's are all within its share"}.">
       <div class="k">Overhang</div>
-      <div class="v">${ready ? (overhang ? `+${overhang}` : "None") : "–"}</div>
-      <div class="r">${!ready ? "awaiting results" : overhang ? (range(over(s.lo), over(s.hi)) ? `range ${range(over(s.lo), over(s.hi), (x) => (x ? "+" + x : "0"))}` : "no list MPs") : `≈${s.earned - s.natWins} list MPs`}</div>
+      <div class="v">${oh ? (oh.total ? `+${oh.total}` : "None") : "–"}</div>
+      <div class="r">${!oh ? "awaiting results" : oh.parties.length ? oh.parties.map((x) => `${x.label} +${x.n}`).join(" · ") : "Parliament of 120"}</div>
     </div>
     <div class="stat2" data-tip="The 21 seats in the panels below.">
       <div class="k">Watch seats</div>
@@ -712,20 +882,20 @@ function renderWatch() {
     const t = watchTally(side);
     return `<div>
       <div class="col-head"><h3>${title}</h3><span class="tally">${word} <b>${t.ahead}</b> / ${t.total}</span></div>
-      ${labelsRow("NAT margin")}
-      ${watchSeats(side).map((e) => natRow(race(e))).join("")}
+      ${labelsRow("NAT margin", side)}
+      ${sortedWatchSeats(side).map(natRow).join("")}
     </div>`;
   };
   const others = WATCH_GROUPS.find((g) => g.side === "other");
-  const otherRows = others.seats.map(([e]) => leadRow(race(e)));
+  const otherRows = sortedWatchSeats("other").map(leadRow);
   const half = Math.ceil(otherRows.length / 2);
 
   document.getElementById("watch").innerHTML = `${board}
     <div class="cols">${column("defend", "National defending", "holding")}${column("attack", "National chasing", "gaining")}</div>
-    <div class="legend">Bar: National's margin, ±${MARGIN_SCALE}% full width. Colour shows who leads. <span class="close">▲</span> within ${CLOSE_MARGIN} votes. Click a seat for detail.</div>
+    <div class="legend">Bar: National's margin, ±${MARGIN_SCALE}% full width. Colour shows who leads. <span class="close">▲</span> close: ${CLOSE_TEXT}. Click a seat for detail.</div>
     <details class="others"${state.othersOpen ? " open" : ""}>
       <summary>${esc(others.title)} (${others.seats.length})</summary>
-      <div class="cols"><div>${labelsRow("Lead")}${otherRows.slice(0, half).join("")}</div><div>${labelsRow("Lead")}${otherRows.slice(half).join("")}</div></div>
+      <div class="cols"><div>${labelsRow("Margin", "other")}${otherRows.slice(0, half).join("")}</div><div>${labelsRow("Margin", "other")}${otherRows.slice(half).join("")}</div></div>
     </details>`;
 }
 
@@ -735,7 +905,57 @@ function watchTally(side) {
   return { ahead: seats.filter((e) => natView(race(e))?.ahead).length, total: seats.length };
 }
 
-const labelsRow = (what) => `<div class="mrow labels" aria-hidden="true"><span>Leads</span><span>Seat</span><span>${what}</span><span class="n">votes</span><span class="n">%</span><span class="n">cntd</span></div>`;
+// Margin sorts by closeness; votes and % follow the signed figures shown in the row.
+const WATCH_COLUMNS = [
+  { key: "leads", label: "Leads", direction: "asc", description: "leading party, A–Z" },
+  { key: "seat", label: "Seat", direction: "asc", description: "seat name, A–Z" },
+  { key: "margin", direction: "asc", description: "closest margin first (percentage points)" },
+  { key: "votes", label: "votes", direction: "desc", description: "vote margin, highest first" },
+  { key: "share", label: "%", direction: "desc", description: "percentage margin, highest first" },
+  { key: "counted", label: "cntd", direction: "desc", description: "voting places counted, highest first" },
+];
+function labelsRow(what, group) {
+  const sort = state.watchSort[group];
+  return `<div class="mrow labels">${WATCH_COLUMNS.map((col, i) => {
+    const active = sort?.key === col.key;
+    const direction = active ? sort.direction : col.direction;
+    const next = active ? (direction === "asc" ? "descending" : "ascending") : (direction === "asc" ? "ascending" : "descending");
+    const label = col.label ?? what;
+    return `<button type="button" class="${i >= 3 ? "n " : ""}${active ? "active" : ""}" data-sort-group="${group}" data-sort-key="${col.key}" title="Sort by ${col.description}; click for ${next} order" aria-label="${esc(`${label === "cntd" ? "Counted" : label}: ${active ? `sorted ${direction === "asc" ? "ascending" : "descending"}; ` : ""}sort ${next}`)}">${label}<span class="sort-arrow" aria-hidden="true">${active ? (direction === "asc" ? "↑" : "↓") : "↕"}</span></button>`;
+  }).join("")}</div>`;
+}
+function sortedWatchSeats(group) {
+  const rows = watchSeats(group).map(race);
+  const sort = state.watchSort[group];
+  if (!sort) return rows;
+  const value = (rc) => {
+    if (sort.key === "seat") return rc.name;
+    if (sort.key === "counted") return rc.data ? rc.pctPlaces : null;
+    if (!rc.started) return null;
+    if (sort.key === "leads") return rc.tied ? "Tied" : party(rc.lead.p).label;
+    const margin = group === "other" ? rc.margin : natView(rc)?.diff;
+    if (margin == null) return null;
+    if (sort.key === "votes") return margin;
+    const share = margin / rc.total * 100;
+    return sort.key === "margin" ? Math.abs(share) : share;
+  };
+  return rows.sort((a, b) => {
+    const av = value(a), bv = value(b);
+    // Missing results stay last in either direction; equal values use seat name.
+    if (av == null || bv == null) return (av == null) - (bv == null) || a.name.localeCompare(b.name);
+    const comparison = typeof av === "string" ? av.localeCompare(bv) : av - bv;
+    return comparison * (sort.direction === "asc" ? 1 : -1) || a.name.localeCompare(b.name);
+  });
+}
+function sortWatch(group, key) {
+  const col = WATCH_COLUMNS.find((c) => c.key === key);
+  if (!col || !WATCH_GROUPS.some((g) => g.side === group)) return;
+  const previous = state.watchSort[group];
+  const direction = previous?.key === key ? (previous.direction === "asc" ? "desc" : "asc") : col.direction;
+  state.watchSort[group] = { key, direction };
+  renderWatch();
+  document.querySelector(`[data-sort-group="${group}"][data-sort-key="${key}"]`)?.focus();
+}
 
 function marginBar(cls, share, oneway) {
   const w = (Math.min(Math.abs(share), MARGIN_SCALE) / MARGIN_SCALE) * (oneway ? 100 : 50);
@@ -757,13 +977,13 @@ function natRow(rc) {
   }
   const leader = nv.ahead ? nv.nat : rc.lead;
   const share = (nv.diff / rc.total) * 100;
-  const close = Math.abs(nv.diff) < CLOSE_MARGIN;
+  const close = Math.abs(nv.diff) < closeMargin(rc);
   const sign = nv.diff > 0 ? "+" : nv.diff < 0 ? "−" : "";
   const line = `${nv.nat.name} (NAT) ${fmt(nv.nat.votes)} v ${nv.rival.name} (${party(nv.rival.p).label}) ${fmt(nv.rival.votes)}`;
-  return `<button type="button" class="mrow" data-e="${rc.e}" data-tip="${esc(seatTip(rc, line))}" aria-label="${esc(`${rc.name}: National ${nv.ahead ? "ahead" : "behind"} by ${fmt(Math.abs(nv.diff))}`)}">
-    ${chip(leader.p)}
+  return `<button type="button" class="mrow" data-e="${rc.e}" data-tip="${esc(seatTip(rc, line))}" aria-label="${esc(`${rc.name}: National ${nv.tied ? "tied" : `${nv.ahead ? "ahead" : "behind"} by ${fmt(Math.abs(nv.diff))}`}`)}">
+    ${rc.tied ? `<span class="sub">Tied</span>` : chip(leader.p)}
     <span class="mname">${esc(rc.name)}</span>
-    ${marginBar(party(leader.p).cls, share)}
+    ${marginBar(rc.tied ? "" : party(leader.p).cls, share)}
     <span class="n"><span class="${close ? "close" : ""}">${close ? "▲" : ""}${sign}${fmt(Math.abs(nv.diff))}</span></span>
     <span class="n">${sign}${Math.abs(share).toFixed(1)}</span>
     <span class="n dim">${pct(rc.pctPlaces, 0)}</span>
@@ -777,12 +997,12 @@ function leadRow(rc) {
       <span></span><span class="mname">${esc(rc.name)}</span>${marginBar("", 0, true)}<span class="n dim">–</span><span class="n dim">–</span><span class="n dim">–</span></button>`;
   }
   const share = rc.second ? (rc.margin / rc.total) * 100 : 100;
-  const close = rc.margin !== null && rc.margin < CLOSE_MARGIN;
+  const close = rc.margin !== null && rc.margin < closeMargin(rc);
   const line = rc.second ? `${rc.lead.name} (${party(rc.lead.p).label}) ${fmt(rc.lead.votes)} v ${rc.second.name} (${party(rc.second.p).label}) ${fmt(rc.second.votes)}` : rc.lead.name;
   return `<button type="button" class="mrow" data-e="${rc.e}" data-tip="${esc(seatTip(rc, line))}">
-    ${chip(rc.lead.p)}
+    ${rc.tied ? `<span class="sub">Tied</span>` : chip(rc.lead.p)}
     <span class="mname">${esc(rc.name)}</span>
-    ${marginBar(party(rc.lead.p).cls, share, true)}
+    ${marginBar(rc.tied ? "" : party(rc.lead.p).cls, share, true)}
     <span class="n"><span class="${close ? "close" : ""}">${close ? "▲" : ""}${fmt(rc.margin ?? 0)}</span></span>
     <span class="n">${share.toFixed(1)}</span>
     <span class="n dim">${pct(rc.pctPlaces, 0)}</span>
@@ -812,9 +1032,9 @@ function renderList() {
     const f = flags(rc);
     return `<tr tabindex="0" data-e="${rc.e}">
       <td><b>${esc(rc.name)}</b>${WATCH.has(rc.e) ? ` <span class="sub">watch</span>` : ""}</td>
-      <td>${rc.lead ? `${chip(rc.lead.p)}<span class="who">${esc(rc.lead.name)}</span>` : `<span class="sub">–</span>`}</td>
+      <td>${rc.tied ? `<span class="sub">Tied</span>` : rc.lead ? `${chip(rc.lead.p)}<span class="who">${esc(rc.lead.name)}</span>` : `<span class="sub">–</span>`}</td>
       <td class="num">${rc.margin !== null ? fmt(rc.margin) : `<span class="sub">–</span>`}</td>
-      <td>${rc.second ? `${chip(rc.second.p)}<span class="who">${esc(rc.second.name)}</span>` : `<span class="sub">–</span>`}</td>
+      <td>${rc.tied ? `<span class="sub">Tied for lead</span>` : rc.second ? `${chip(rc.second.p)}<span class="who">${esc(rc.second.name)}</span>` : `<span class="sub">–</span>`}</td>
       <td><span class="mini"><span style="width:${rc.pctPlaces}%"></span></span>${pct(rc.pctPlaces, 0)}</td>
       <td>${f.close ? `<span class="tag close">▲ Close</span>` : ""} ${f.change ? `<span class="tag change">⇄ Flip</span>` : ""}</td>
     </tr>`;
@@ -883,7 +1103,7 @@ function renderDetail() {
     </div>
     ${w ? `<div class="note"><b>Why it matters:</b> ${esc(w.note)}<br>2023: ${heldChip(w.held)}${w.margin ? ` by ${esc(w.margin)}` : ""}</div>` : ""}
     <div class="stats">
-      <div class="stat"><div class="k">Leading by</div><div class="v">${rc.margin !== null ? fmt(rc.margin) : "–"}</div></div>
+      <div class="stat"><div class="k">${rc.tied ? "Tied for lead" : "Leading by"}</div><div class="v">${rc.margin !== null ? fmt(rc.margin) : "–"}</div></div>
       <div class="stat"><div class="k">Voting places</div><div class="v">${rc.placesCounted} / ${rc.places}</div></div>
       <div class="stat"><div class="k">Counted</div><div class="v">${pct(rc.pctPlaces)}</div></div>
       <div class="stat"><div class="k">Votes cast</div><div class="v">${r ? fmt(r.votes) : "–"}</div></div>
@@ -895,6 +1115,36 @@ function renderDetail() {
     ${r ? `<p class="sub">Informal: ${fmt(r.candidateInformals)} candidate, ${fmt(r.partyInformals)} party.</p>` : ""}`;
 }
 
+// Surprises are live leads against a strong pre-election consensus.
+function surpriseRaces() {
+  return [...state.ref.electorates.keys()].map(race).flatMap((rc) => {
+    const baseline = surpriseBaseline.get(seatKey(rc.name));
+    if (!baseline || baseline.total < SURPRISE_MIN_PICKS || baseline.consensus < SURPRISE_CONSENSUS) return [];
+    if (!rc.started || rc.tied || party(rc.lead.p).abbrev === baseline.expected) return [];
+    return [{ rc, baseline }];
+  }).sort((a, b) => b.baseline.consensus - a.baseline.consensus || b.rc.pctPlaces - a.rc.pctPlaces || (b.rc.margin ?? 0) - (a.rc.margin ?? 0) || a.rc.name.localeCompare(b.rc.name));
+}
+function renderSurprises() {
+  const rows = surpriseRaces();
+  const mapped = [...state.ref.electorates.values()].filter((name) => surpriseBaseline.has(seatKey(name))).length;
+  document.getElementById("surprise-sub").textContent = `${rows.length} against consensus · ${mapped} of ${state.ref.electorates.size} seats matched`;
+  document.getElementById("surprises").innerHTML = rows.length ? `<div class="table-wrap"><table>
+    <thead><tr><th>Seat</th><th>Expected</th><th>Now leading</th><th class="num">Lead (votes)</th><th>Counted</th><th>Context</th></tr></thead>
+    <tbody>${rows.map(({ rc, baseline: b }) => {
+      const expectedParty = [...state.ref.parties.values()].find((p) => p.abbrev === b.expected);
+      const early = rc.pctPlaces < 10 || rc.total < 500;
+      const context = early ? "Early count" : flags(rc).close ? "Close lead" : "Leading against consensus";
+      return `<tr tabindex="0" data-e="${rc.e}">
+        <td><b class="surprise-seat">${esc(rc.name)}</b><span class="sub surprise-note">${b.agreement === b.total ? "Unanimous pick" : "Strong consensus"}</span></td>
+        <td>${expectedParty ? chip(expectedParty.p) : esc(PARTY_LABEL[b.expected] ?? b.expected)} <span class="sub">${b.agreement}/${b.total} picks</span></td>
+        <td>${chip(rc.lead.p)}<span class="who">${esc(rc.lead.name)}</span></td>
+        <td class="num">${rc.margin === null ? "–" : fmt(rc.margin)}</td>
+        <td>${pct(rc.pctPlaces, 0)}</td>
+        <td><span class="tag close">${context}</span></td>
+      </tr>`;
+    }).join("")}</tbody></table></div>` : `<div class="empty">${[...state.ref.electorates.keys()].some((e) => race(e).started) ? "No leads against a strong consensus right now." : "Waiting for electorate results. Surprise leads will appear here automatically."}</div>`;
+}
+
 function renderAll() {
   if (!state.ref) return;
   renderStatus();
@@ -902,6 +1152,7 @@ function renderAll() {
   renderPartyVote();
   renderWatch();
   renderList();
+  renderSurprises();
   renderDetail();
 }
 
@@ -928,7 +1179,10 @@ async function refreshElectorates() {
   await mapLimit(nums, 8, async (e) => {
     const path = `e${String(e).padStart(2, "0")}/e${String(e).padStart(2, "0")}.xml`;
     const res = await getFeed(path);
-    if (res.status === 200) state.seats.set(e, parseElectorate(res.text));
+    if (res.status === 200) {
+      // Forget its Last-Modified if it won't parse, or every later request is a 304 and it never loads.
+      try { state.seats.set(e, parseElectorate(res.text)); } catch (err) { lastModified.delete(path); throw err; }
+    }
     if (res.status === 404) state.seats.delete(e); // spec: may not exist until first result
   });
 }
@@ -936,14 +1190,19 @@ async function refreshElectorates() {
 async function poll() {
   state.tick++;
   try {
-    const res = await getFeed("election.xml");
     let changed = false;
+    const res = await getFeed("election.xml");
     if (res.status === 200) {
-      const next = parseElection(res.text);
-      changed = !state.election || next.updated !== state.election.updated;
+      let next;
+      try { next = parseElection(res.text); } catch (err) { lastModified.delete("election.xml"); throw err; }
+      changed ||= !state.election || next.updated !== state.election.updated;
       state.election = next;
     }
-    if (changed || state.tick % FULL_REFRESH_EVERY === 1) await refreshElectorates();
+    if (changed || state.tick % FULL_REFRESH_EVERY === 1) state.electoratesPending = true;
+    if (state.electoratesPending) {
+      await refreshElectorates();
+      state.electoratesPending = false;
+    }
     state.lastSuccess = Date.now();
     state.lastError = null;
   } catch (err) {
@@ -966,8 +1225,11 @@ async function start() {
     }
   }
   if (REPLAY) Replay.build(state.ref);
-  await poll();
-  setInterval(poll, POLL_MS);
+  // Each poll starts only after the last one finishes, so they can't overlap.
+  const loop = async () => {
+    try { await poll(); } catch (err) { console.error("poll or render failed", err); } finally { setTimeout(loop, POLL_MS); }
+  };
+  await loop();
   setInterval(renderHealth, 1000);
 }
 
@@ -976,13 +1238,24 @@ async function start() {
 // ====================================================================
 
 document.getElementById("watch").addEventListener("click", (ev) => {
+  const heading = ev.target.closest("button[data-sort-key]");
+  if (heading) { sortWatch(heading.dataset.sortGroup, heading.dataset.sortKey); return; }
   const row = ev.target.closest(".mrow[data-e]");
   if (row) openDetail(Number(row.dataset.e));
 });
 // Remember whether "Other seats" is open; renderWatch rebuilds it on every update.
 document.getElementById("watch").addEventListener("toggle", (ev) => {
-  if (ev.target.matches("details.others")) state.othersOpen = ev.target.open;
+  if (ev.target.isConnected && ev.target.matches("details.others")) state.othersOpen = ev.target.open;
 }, true);
+const surpriseBox = document.getElementById("surprises");
+surpriseBox.addEventListener("click", (ev) => {
+  const row = ev.target.closest("tr[data-e]");
+  if (row) openDetail(Number(row.dataset.e));
+});
+surpriseBox.addEventListener("keydown", (ev) => {
+  const row = ev.target.closest("tr[data-e]");
+  if (row && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openDetail(Number(row.dataset.e)); }
+});
 const body = document.getElementById("el-body");
 body.addEventListener("click", (ev) => { const tr = ev.target.closest("tr[data-e]"); if (tr) openDetail(Number(tr.dataset.e)); });
 body.addEventListener("keydown", (ev) => {
